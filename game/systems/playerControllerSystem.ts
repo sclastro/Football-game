@@ -57,6 +57,9 @@ export function usePlayerCharacterController(
     controller.setSlideEnabled(true);
     controller.enableAutostep(0.3, 0.2, true);
     controller.enableSnapToGround(0.3);
+    // Let the character shove dynamic bodies (the ball) aside while dribbling.
+    controller.setApplyImpulsesToDynamicBodies(true);
+    controller.setCharacterMass(PHYSICS_CONFIG.player.mass);
     controllerRef.current = controller;
     return () => {
       world.removeCharacterController(controller);
