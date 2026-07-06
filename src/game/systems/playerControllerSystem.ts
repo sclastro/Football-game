@@ -31,6 +31,8 @@ export interface PlayerControllerHandle {
   /** Advances the character by one physics step using the given input. Returns current speed (m/s). */
   update: (delta: number, input: InputState) => number;
   yaw: RefObject<number>;
+  /** Zero out velocity and face the given yaw (used on kickoff teleports). */
+  reset: (yaw?: number) => void;
 }
 
 /**
@@ -126,5 +128,11 @@ export function usePlayerCharacterController(
     return Math.hypot(velocity.current.x, velocity.current.z);
   };
 
-  return { update, yaw };
+  const reset = (newYaw = 0) => {
+    velocity.current.set(0, 0, 0);
+    verticalVelocity.current = 0;
+    yaw.current = newYaw;
+  };
+
+  return { update, yaw, reset };
 }

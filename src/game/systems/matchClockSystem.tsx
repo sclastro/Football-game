@@ -2,16 +2,21 @@ import { useFrame } from "@react-three/fiber";
 import { useGameStore } from "@/game/state/gameStore";
 
 /**
- * Invisible scene component that ticks the match clock via the render loop,
- * so the countdown stays in sync with physics and pauses cleanly when the
- * match is not live.
+ * Invisible scene component driving match flow from the render loop:
+ * ticks the countdown while live, and once the GOAL! stoppage expires,
+ * signals every entity to teleport to kickoff spots and resumes play.
  */
 export function MatchClock() {
-  const tickClock = useGameStore((s) => s.tickClock);
-
   useFrame((_, delta) => {
-    if (useGameStore.getState().phase === "live") {
-      tickClock(delta);
+    const state = useGameStore.getState();
+
+    if (state.phase === "live") {
+      state.tickClock(delta);
+    } else if (state.phase === "goalStoppage") {
+      const now = performance.now() / 1000;
+      if (now >= state.goalFlashUntil) {
+        state.restartAfterGoal();
+      }
     }
   });
 

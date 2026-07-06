@@ -12,9 +12,11 @@ interface GameActions {
   tickClock: (dt: number) => void;
   /** Register a goal for the given side and trigger the GOAL! flash. */
   scoreGoal: (side: "home" | "away") => void;
+  /** After the goal stoppage: teleport everyone to kickoff spots and resume. */
+  restartAfterGoal: () => void;
   /** Reset back to a fresh kickoff. */
   resetMatch: () => void;
-  setPhase: (phase: MatchState["phase"]) => void;
+  setControlledPlayer: (id: string) => void;
 }
 
 const initialState: MatchState = {
@@ -23,8 +25,9 @@ const initialState: MatchState = {
   score: { home: 0, away: 0 },
   clock: MATCH_DURATION,
   phase: "live",
-  controlledPlayerId: "home-10",
+  controlledPlayerId: "home-5",
   goalFlashUntil: 0,
+  resetNonce: 0,
 };
 
 export const useGameStore = create<MatchState & GameActions>((set) => ({
@@ -38,13 +41,19 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
     }),
 
   scoreGoal: (side) =>
-    set((s) => ({
-      score: { ...s.score, [side]: s.score[side] + 1 },
-      goalFlashUntil: performance.now() / 1000 + GOAL_FLASH_DURATION,
-      phase: "goalStoppage",
-    })),
+    set((s) => {
+      if (s.phase !== "live") return s;
+      return {
+        score: { ...s.score, [side]: s.score[side] + 1 },
+        goalFlashUntil: performance.now() / 1000 + GOAL_FLASH_DURATION,
+        phase: "goalStoppage",
+      };
+    }),
 
-  resetMatch: () => set({ ...initialState }),
+  restartAfterGoal: () =>
+    set((s) => ({ resetNonce: s.resetNonce + 1, phase: "live" })),
 
-  setPhase: (phase) => set({ phase }),
+  resetMatch: () => set((s) => ({ ...initialState, resetNonce: s.resetNonce + 1 })),
+
+  setControlledPlayer: (id) => set({ controlledPlayerId: id }),
 }));

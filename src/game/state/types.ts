@@ -29,4 +29,6 @@ export interface MatchState {
   controlledPlayerId: string;
   /** Set briefly when a goal is scored so the HUD can show a GOAL! flash. */
   goalFlashUntil: number;
+  /** Incremented to signal every entity to teleport back to its kickoff spot. */
+  resetNonce: number;
 }
