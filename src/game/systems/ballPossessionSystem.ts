@@ -2,6 +2,11 @@ import * as THREE from "three";
 import type { RapierRigidBody } from "@react-three/rapier";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import type { InputState } from "./inputSystem";
+import {
+  playerRegistry,
+  passState,
+  type PlayerRecord,
+} from "./worldRegistry";
 
 const {
   kickRange,
@@ -84,3 +89,92 @@ export function aiKick(
 }
 
 const _up = new THREE.Vector3(0, 1, 0);
+const _toMate = new THREE.Vector3();
+const _facing = new THREE.Vector3();
+
+/** Pass reach and power tuning. */
+const PASS_MIN_DIST = 2;
+const PASS_MAX_DIST = 26;
+const PASS_CONE_DEG = 75;
+
+/**
+ * Pick the best teammate to receive a pass: prefer the smallest angle off the
+ * passer's facing direction within a cone, tie-broken toward shorter passes.
+ * Falls back to the nearest teammate if nobody is inside the cone.
+ * Goalkeepers are never receivers (control never switches to the GK).
+ */
+export function choosePassReceiver(
+  selfId: string,
+  playerPos: THREE.Vector3,
+  yaw: number,
+): PlayerRecord | null {
+  const self = playerRegistry.get(selfId);
+  if (!self) return null;
+
+  facingVector(yaw, _facing);
+  const coneRad = (PASS_CONE_DEG * Math.PI) / 180;
+
+  let bestInCone: PlayerRecord | null = null;
+  let bestScore = Infinity;
+  let nearest: PlayerRecord | null = null;
+  let nearestDist = Infinity;
+
+  for (const rec of playerRegistry.values()) {
+    if (rec.team !== self.team || rec.id === selfId || rec.isGoalkeeper) continue;
+
+    _toMate.subVectors(rec.position, playerPos);
+    _toMate.y = 0;
+    const dist = _toMate.length();
+    if (dist < PASS_MIN_DIST || dist > PASS_MAX_DIST) continue;
+
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearest = rec;
+    }
+
+    _toMate.normalize();
+    const angle = _facing.angleTo(_toMate);
+    if (angle > coneRad) continue;
+
+    // Angle dominates; slight preference for closer targets.
+    const score = angle * 2 + dist * 0.03;
+    if (score < bestScore) {
+      bestScore = score;
+      bestInCone = rec;
+    }
+  }
+
+  return bestInCone ?? nearest;
+}
+
+/**
+ * Kick the ball toward a teammate with distance-scaled power and register the
+ * pass for auto-switch. Returns true if the pass was struck.
+ */
+export function tryPass(
+  ball: RapierRigidBody,
+  selfId: string,
+  playerPos: THREE.Vector3,
+  yaw: number,
+): boolean {
+  if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
+
+  const receiver = choosePassReceiver(selfId, playerPos, yaw);
+  if (!receiver) return false;
+
+  const t = ball.translation();
+  _dir.set(receiver.position.x - t.x, 0, receiver.position.z - t.z);
+  const dist = _dir.length();
+  if (dist < 0.5) return false;
+  _dir.normalize();
+
+  // Enough pace to arrive briskly, gentle enough to be controllable.
+  const power = THREE.MathUtils.clamp(dist * 0.5, 3, 9.5);
+  _impulse.copy(_dir).multiplyScalar(power);
+  _impulse.y = power * 0.12; // low, driven pass
+  ball.applyImpulse(_impulse, true);
+
+  passState.receiverId = receiver.id;
+  passState.expiresAt = performance.now() / 1000 + 2.5;
+  return true;
+}

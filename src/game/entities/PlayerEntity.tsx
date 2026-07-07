@@ -6,7 +6,7 @@ import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
 import { useCameraSystem } from "@/game/systems/cameraSystem";
-import { tryShoot, aiKick } from "@/game/systems/ballPossessionSystem";
+import { tryShoot, tryPass, aiKick } from "@/game/systems/ballPossessionSystem";
 import { computeAiInput } from "@/game/systems/aiSystem";
 import { useGameStore } from "@/game/state/gameStore";
 import {
@@ -73,6 +73,7 @@ export function PlayerEntity({
       shootHeld: false,
       shootCharge: 0,
       shootReleased: false,
+      passPressed: false,
     }),
     [],
   );
@@ -162,6 +163,11 @@ export function PlayerEntity({
     if (ball && active) {
       if (controlled) {
         if (tryShoot(ball, record.position, yaw.current, input)) {
+          kickTimer.current = KICK_DURATION;
+        } else if (
+          input.passPressed &&
+          tryPass(ball, id, record.position, yaw.current)
+        ) {
           kickTimer.current = KICK_DURATION;
         }
       } else {

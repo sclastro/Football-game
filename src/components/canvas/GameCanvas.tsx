@@ -8,6 +8,7 @@ import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
 import { MatchClock } from "@/game/systems/matchClockSystem";
 import { ControlSwitcher } from "@/game/systems/controlSwitchSystem";
+import { PassMonitor } from "@/game/systems/passMonitorSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
 import { TEAMS, DEFAULT_HOME_TEAM, DEFAULT_AWAY_TEAM } from "@/game/data/teams";
 
@@ -26,6 +27,7 @@ export function GameCanvas() {
       <Stadium />
       <MatchClock />
       <ControlSwitcher />
+      <PassMonitor />
 
       <Physics gravity={PHYSICS_CONFIG.gravity}>
         <Field />

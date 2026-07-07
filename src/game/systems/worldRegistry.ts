@@ -22,6 +22,15 @@ export const playerRegistry = new Map<string, PlayerRecord>()
 
 export const ballApi: { body: RapierRigidBody | null } = { body: null }
 
+/**
+ * In-flight pass being tracked for auto-switch: when the ball reaches the
+ * receiver, control jumps to them. Cleared on connect, expiry, or reset.
+ */
+export const passState: { receiverId: string | null; expiresAt: number } = {
+  receiverId: null,
+  expiresAt: 0,
+}
+
 export function ballPosition(out = new THREE.Vector3()): THREE.Vector3 | null {
   const body = ballApi.body
   if (!body) return null

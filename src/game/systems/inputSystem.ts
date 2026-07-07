@@ -10,6 +10,7 @@ const MOVE_KEYS = {
 
 const SPRINT_KEYS = ["ShiftLeft", "ShiftRight"];
 const SHOOT_KEYS = ["Space"];
+const PASS_KEYS = ["KeyE"];
 
 export interface InputState {
   /** Normalized movement direction on the XZ plane (camera-relative forward = -Z). */
@@ -21,6 +22,8 @@ export interface InputState {
   shootCharge: number;
   /** True only on the single frame the shoot key is released (edge trigger). */
   shootReleased: boolean;
+  /** True only on the single frame the pass key is pressed (edge trigger). */
+  passPressed: boolean;
 }
 
 /**
@@ -31,6 +34,7 @@ export interface InputState {
 export function useInputSystem() {
   const pressedKeys = useRef(new Set<string>());
   const prevShootHeld = useRef(false);
+  const prevPassHeld = useRef(false);
   const shootPressedAt = useRef<number | null>(null);
   const stateRef = useRef<InputState>({
     moveDirection: new THREE.Vector2(0, 0),
@@ -38,6 +42,7 @@ export function useInputSystem() {
     shootHeld: false,
     shootCharge: 0,
     shootReleased: false,
+    passPressed: false,
   });
 
   useEffect(() => {
@@ -93,6 +98,11 @@ export function useInputSystem() {
     }
 
     prevShootHeld.current = shootHeld;
+
+    const passHeld = PASS_KEYS.some((k) => keys.has(k));
+    state.passPressed = passHeld && !prevPassHeld.current;
+    prevPassHeld.current = passHeld;
+
     return state;
   };
 
