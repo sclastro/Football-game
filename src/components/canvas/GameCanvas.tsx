@@ -6,17 +6,22 @@ import { Stadium } from "@/game/entities/Stadium";
 import { Ball } from "@/game/entities/Ball";
 import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
+import { Benches } from "@/game/entities/Bench";
 import { MatchClock } from "@/game/systems/matchClockSystem";
 import { ControlSwitcher } from "@/game/systems/controlSwitchSystem";
 import { PassMonitor } from "@/game/systems/passMonitorSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
-import { TEAMS, DEFAULT_HOME_TEAM, DEFAULT_AWAY_TEAM } from "@/game/data/teams";
+import { TEAMS, DEFAULT_HOME_TEAM, DEFAULT_AWAY_TEAM, ROSTERS } from "@/game/data/teams";
+import { useGameStore } from "@/game/state/gameStore";
 
 const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2 - 1;
 
 export function GameCanvas() {
   const home = TEAMS[DEFAULT_HOME_TEAM];
   const away = TEAMS[DEFAULT_AWAY_TEAM];
+  // Entities are keyed by roster player id, so a substitution unmounts the
+  // outgoing player and mounts the incoming one at the slot's spawn point.
+  const homeStarters = useGameStore((s) => s.homeStarters);
 
   return (
     <Canvas camera={{ fov: 55, near: 0.1, far: 300 }}>
@@ -25,6 +30,7 @@ export function GameCanvas() {
       <directionalLight position={[30, 40, 10]} intensity={1.1} />
 
       <Stadium />
+      <Benches homeColor={home.kitColor} awayColor={away.kitColor} />
       <MatchClock />
       <ControlSwitcher />
       <PassMonitor />
@@ -38,8 +44,8 @@ export function GameCanvas() {
 
         {FORMATION.map((slot, i) => (
           <PlayerEntity
-            key={`home-${i}`}
-            id={`home-${i}`}
+            key={homeStarters[i]}
+            id={homeStarters[i]}
             team="home"
             isGoalkeeper={slot.isGoalkeeper}
             color={home.kitColor}
@@ -49,8 +55,8 @@ export function GameCanvas() {
         ))}
         {FORMATION.map((slot, i) => (
           <PlayerEntity
-            key={`away-${i}`}
-            id={`away-${i}`}
+            key={ROSTERS.away.starters[i].id}
+            id={ROSTERS.away.starters[i].id}
             team="away"
             isGoalkeeper={slot.isGoalkeeper}
             color={away.kitColor}

@@ -16,6 +16,7 @@ export interface TeamInfo {
 export type MatchPhase =
   | "kickoff"
   | "live"
+  | "paused"
   | "goalStoppage"
   | "fulltime";
 
@@ -31,4 +32,12 @@ export interface MatchState {
   goalFlashUntil: number;
   /** Incremented to signal every entity to teleport back to its kickoff spot. */
   resetNonce: number;
+  /** Player ids currently on the pitch for the user's team, slot-aligned to FORMATION. */
+  homeStarters: string[];
+  /** Player ids currently available on the user's bench. */
+  homeBench: string[];
+  /** Ids subbed off this match — World Cup rules, they cannot return. */
+  homeSubbedOff: string[];
+  /** Substitutions made so far (max 5, World Cup rules). */
+  homeSubsUsed: number;
 }
