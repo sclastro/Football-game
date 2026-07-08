@@ -1,9 +1,15 @@
 import { create } from "zustand";
-import type { MatchState } from "./types";
-import { DEFAULT_AWAY_TEAM, DEFAULT_HOME_TEAM, ROSTERS } from "@/game/data/teams";
+import type { ControlMode, MatchState } from "./types";
+import {
+  DEFAULT_AWAY_TEAM,
+  DEFAULT_HOME_TEAM,
+  ROSTERS,
+  TEAM_IDS,
+} from "@/game/data/teams";
 
-/** Default match length in seconds (World-Cup-style, shortened for play). */
-export const MATCH_DURATION = 6 * 60;
+/** Selectable match lengths, in seconds. */
+export const DURATION_OPTIONS = [120, 180, 300] as const;
+export const DEFAULT_DURATION = 180;
 /** How long the "GOAL!" flash stays on screen, in seconds. */
 export const GOAL_FLASH_DURATION = 2.5;
 /** World Cup rules: at most 5 substitutions per match. */
@@ -16,32 +22,42 @@ interface GameActions {
   scoreGoal: (side: "home" | "away") => void;
   /** After the goal stoppage: teleport everyone to kickoff spots and resume. */
   restartAfterGoal: () => void;
-  /** Reset back to a fresh kickoff. */
-  resetMatch: () => void;
   setControlledPlayer: (id: string) => void;
-  /** Pause/resume for the substitution panel (only toggles between live and paused). */
-  setPaused: (paused: boolean) => void;
-  /**
-   * Swap an on-field outfield player for a bench player. Enforces World Cup
-   * rules: max 5 subs, and a player subbed off cannot come back on.
-   */
-  substitute: (outId: string, inId: string) => void;
+  setControlMode: (mode: ControlMode) => void;
+  /** Start a match: pick a random opponent, set length, go to the pitch. */
+  startMatch: (homeTeamId: string, durationSeconds: number) => void;
+  /** Return to the main menu. */
+  backToMenu: () => void;
+}
+
+function freshRoster() {
+  return {
+    controlledPlayerId: ROSTERS.home.starters[5].id,
+    homeStarters: ROSTERS.home.starters.map((p) => p.id),
+    homeBench: ROSTERS.home.bench.map((p) => p.id),
+    homeSubbedOff: [] as string[],
+    homeSubsUsed: 0,
+  };
 }
 
 const initialState: MatchState = {
+  screen: "menu",
+  controlMode: "keyboard",
+  matchDuration: DEFAULT_DURATION,
   homeTeamId: DEFAULT_HOME_TEAM,
   awayTeamId: DEFAULT_AWAY_TEAM,
   score: { home: 0, away: 0 },
-  clock: MATCH_DURATION,
+  clock: DEFAULT_DURATION,
   phase: "live",
-  controlledPlayerId: ROSTERS.home.starters[5].id,
   goalFlashUntil: 0,
   resetNonce: 0,
-  homeStarters: ROSTERS.home.starters.map((p) => p.id),
-  homeBench: ROSTERS.home.bench.map((p) => p.id),
-  homeSubbedOff: [],
-  homeSubsUsed: 0,
+  ...freshRoster(),
 };
+
+function randomOpponent(homeTeamId: string): string {
+  const others = TEAM_IDS.filter((id) => id !== homeTeamId);
+  return others[Math.floor(Math.random() * others.length)];
+}
 
 export const useGameStore = create<MatchState & GameActions>((set) => ({
   ...initialState,
@@ -66,37 +82,23 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
   restartAfterGoal: () =>
     set((s) => ({ resetNonce: s.resetNonce + 1, phase: "live" })),
 
-  resetMatch: () => set((s) => ({ ...initialState, resetNonce: s.resetNonce + 1 })),
-
   setControlledPlayer: (id) => set({ controlledPlayerId: id }),
 
-  setPaused: (paused) =>
-    set((s) => {
-      if (paused && s.phase === "live") return { phase: "paused" };
-      if (!paused && s.phase === "paused") return { phase: "live" };
-      return s;
-    }),
+  setControlMode: (mode) => set({ controlMode: mode }),
 
-  substitute: (outId, inId) =>
-    set((s) => {
-      const slot = s.homeStarters.indexOf(outId);
-      const benchIdx = s.homeBench.indexOf(inId);
-      if (slot <= 0 || benchIdx === -1) return s; // slot 0 is the GK — never subbed
-      if (s.homeSubsUsed >= MAX_SUBS) return s;
-      if (s.homeSubbedOff.includes(inId)) return s;
+  startMatch: (homeTeamId, durationSeconds) =>
+    set((s) => ({
+      screen: "playing",
+      homeTeamId,
+      awayTeamId: randomOpponent(homeTeamId),
+      matchDuration: durationSeconds,
+      clock: durationSeconds,
+      score: { home: 0, away: 0 },
+      phase: "live",
+      goalFlashUntil: 0,
+      resetNonce: s.resetNonce + 1,
+      ...freshRoster(),
+    })),
 
-      const starters = [...s.homeStarters];
-      starters[slot] = inId;
-      const bench = [...s.homeBench];
-      bench[benchIdx] = outId;
-
-      return {
-        homeStarters: starters,
-        homeBench: bench,
-        homeSubbedOff: [...s.homeSubbedOff, outId],
-        homeSubsUsed: s.homeSubsUsed + 1,
-        controlledPlayerId:
-          s.controlledPlayerId === outId ? inId : s.controlledPlayerId,
-      };
-    }),
+  backToMenu: () => set({ screen: "menu", phase: "live" }),
 }));

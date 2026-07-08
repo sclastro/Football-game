@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
+import { virtualInput } from "./virtualInput";
 
 const MOVE_KEYS = {
   forward: ["KeyW", "ArrowUp"],
@@ -69,14 +70,15 @@ export function useInputSystem() {
     const left = MOVE_KEYS.left.some((k) => keys.has(k));
     const right = MOVE_KEYS.right.some((k) => keys.has(k));
 
-    const x = (right ? 1 : 0) - (left ? 1 : 0);
-    const z = (backward ? 1 : 0) - (forward ? 1 : 0);
+    // Keyboard vector, merged with the on-screen joystick (if any).
+    const x = (right ? 1 : 0) - (left ? 1 : 0) + virtualInput.moveX;
+    const z = (backward ? 1 : 0) - (forward ? 1 : 0) + virtualInput.moveY;
     state.moveDirection.set(x, z);
     if (state.moveDirection.lengthSq() > 1) state.moveDirection.normalize();
 
-    state.sprinting = SPRINT_KEYS.some((k) => keys.has(k));
+    state.sprinting = SPRINT_KEYS.some((k) => keys.has(k)) || virtualInput.sprint;
 
-    const shootHeld = SHOOT_KEYS.some((k) => keys.has(k));
+    const shootHeld = SHOOT_KEYS.some((k) => keys.has(k)) || virtualInput.shootHeld;
     const now = performance.now();
     state.shootReleased = false;
 
@@ -99,9 +101,10 @@ export function useInputSystem() {
 
     prevShootHeld.current = shootHeld;
 
-    const passHeld = PASS_KEYS.some((k) => keys.has(k));
+    const passHeld = PASS_KEYS.some((k) => keys.has(k)) || virtualInput.passRequested;
     state.passPressed = passHeld && !prevPassHeld.current;
     prevPassHeld.current = passHeld;
+    virtualInput.passRequested = false; // consume the tap
 
     return state;
   };

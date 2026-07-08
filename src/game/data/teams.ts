@@ -34,11 +34,78 @@ export const TEAMS: Record<string, TeamInfo> = {
     id: "ENG",
     name: "England",
     short: "ENG",
-    kitColor: "#ffffff",
+    kitColor: "#ececec",
     accentColor: "#cf1020",
     flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   },
+  GER: {
+    id: "GER",
+    name: "Germany",
+    short: "GER",
+    kitColor: "#efefef",
+    accentColor: "#111111",
+    flag: "🇩🇪",
+  },
+  ESP: {
+    id: "ESP",
+    name: "Spain",
+    short: "ESP",
+    kitColor: "#c8102e",
+    accentColor: "#ffd100",
+    flag: "🇪🇸",
+  },
+  POR: {
+    id: "POR",
+    name: "Portugal",
+    short: "POR",
+    kitColor: "#a01329",
+    accentColor: "#0d5c34",
+    flag: "🇵🇹",
+  },
+  NED: {
+    id: "NED",
+    name: "Netherlands",
+    short: "NED",
+    kitColor: "#f36c21",
+    accentColor: "#ffffff",
+    flag: "🇳🇱",
+  },
+  JPN: {
+    id: "JPN",
+    name: "Japan",
+    short: "JPN",
+    kitColor: "#12326b",
+    accentColor: "#ffffff",
+    flag: "🇯🇵",
+  },
+  CRO: {
+    id: "CRO",
+    name: "Croatia",
+    short: "CRO",
+    kitColor: "#d7263d",
+    accentColor: "#ffffff",
+    flag: "🇭🇷",
+  },
+  MEX: {
+    id: "MEX",
+    name: "Mexico",
+    short: "MEX",
+    kitColor: "#046a38",
+    accentColor: "#ffffff",
+    flag: "🇲🇽",
+  },
+  MAR: {
+    id: "MAR",
+    name: "Morocco",
+    short: "MAR",
+    kitColor: "#b81b22",
+    accentColor: "#0e6b3f",
+    flag: "🇲🇦",
+  },
 };
+
+/** Ids of all selectable teams, in menu order. */
+export const TEAM_IDS = Object.keys(TEAMS);
 
 export const DEFAULT_HOME_TEAM = "BRA";
 export const DEFAULT_AWAY_TEAM = "ARG";

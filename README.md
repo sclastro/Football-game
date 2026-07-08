@@ -16,9 +16,18 @@ The whole game runs client-side in the browser; there is no backend.
 
 ## Controls
 
-- **WASD / Arrow keys** — move
+From the start menu, pick your nation (opponent is random), a match length
+(2 / 3 / 5 min), and keyboard or touch-joystick controls.
+
+Keyboard:
+- **WASD / Arrow keys** — move (forward is up the pitch)
 - **Hold Shift** — sprint
+- **E** — pass (control automatically follows the ball to the receiver)
 - **Hold Space, release** — shoot (longer hold = more power)
+
+Touch: on-screen joystick + Pass / Shoot buttons (toggle in the menu or the
+in-match ⚙ settings). You never switch players or substitute by hand — passing
+hands control over, everyone else is AI.
 
 ## Develop
 

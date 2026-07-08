@@ -20,7 +20,16 @@ export type MatchPhase =
   | "goalStoppage"
   | "fulltime";
 
+export type Screen = "menu" | "playing";
+export type ControlMode = "keyboard" | "joystick";
+
 export interface MatchState {
+  /** Which top-level screen is showing. */
+  screen: Screen;
+  /** Input scheme (joystick is the on-screen touch control). */
+  controlMode: ControlMode;
+  /** Chosen match length in seconds. */
+  matchDuration: number;
   homeTeamId: string;
   awayTeamId: string;
   score: { home: number; away: number };
