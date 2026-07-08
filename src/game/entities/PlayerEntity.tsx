@@ -7,7 +7,7 @@ import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
 import { useCameraSystem } from "@/game/systems/cameraSystem";
 import { tryShoot, tryPass, aiKick } from "@/game/systems/ballPossessionSystem";
-import { computeAiInput } from "@/game/systems/aiSystem";
+import { computeAiInput, makeAiState } from "@/game/systems/aiSystem";
 import { useGameStore } from "@/game/state/gameStore";
 import {
   ballApi,
@@ -17,7 +17,7 @@ import {
 } from "@/game/systems/worldRegistry";
 import { FIELD_DIMENSIONS } from "./Field";
 
-const { capsuleRadius, capsuleHalfHeight } = PHYSICS_CONFIG.player;
+const { capsuleRadius, capsuleHalfHeight, aiSpeedFactor } = PHYSICS_CONFIG.player;
 
 // The model group is placed at the capsule centre. Shift the visual meshes down
 // so the feet (lowest leg point) line up with the capsule's bottom / the pitch.
@@ -85,6 +85,7 @@ export function PlayerEntity({
       position: new THREE.Vector3(...spawnPosition),
       spawn: spawnPosition,
       rigidBody: null,
+      ai: makeAiState(),
     }),
     // Registry record identity must be stable for this entity's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -145,7 +146,8 @@ export function PlayerEntity({
       input = aiInput;
     }
 
-    const speed = updateController(delta, input);
+    const speedScale = controlled ? 1 : record.ai.speed * aiSpeedFactor;
+    const speed = updateController(delta, input, speedScale);
 
     // Mirror the physics body's kinematic transform onto the visual model.
     const rigidBody = rigidBodyRef.current;

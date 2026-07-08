@@ -1,29 +1,28 @@
-import { CuboidCollider, RigidBody } from "@react-three/rapier";
-import { useGameStore } from "@/game/state/gameStore";
+import { RigidBody } from "@react-three/rapier";
 
-const GOAL_WIDTH = 6;
-const GOAL_HEIGHT = 2.2;
-const POST_THICKNESS = 0.12;
-const GOAL_DEPTH = 1.2;
+const GOAL_WIDTH = 7.4;
+const GOAL_HEIGHT = 2.6;
+const POST_THICKNESS = 0.14;
+const GOAL_DEPTH = 1.5;
 
 interface GoalProps {
-  /** Which goal line this goal sits on: -1 = home's goal (-Z), +1 = away's (+Z). */
+  /** Which goal line this goal sits on: -1 = -Z goal, +1 = +Z goal. */
   end: -1 | 1;
-  /** Z of the goal line. */
+  /** Z of the goal line (magnitude). */
   lineZ: number;
 }
 
 /**
- * Goal frame (posts + crossbar + back box) with a sensor across the mouth.
- * The ball entering the sensor scores for the team attacking this end:
- * the ball crossing the away goal (+Z) is a HOME goal, and vice versa.
+ * Goal frame: posts, crossbar and a netted back/side box. Scoring is detected
+ * separately by ball position (see goalDetectionSystem), so a goal only counts
+ * once the ball has fully crossed the line between the posts.
  */
 export function Goal({ end, lineZ }: GoalProps) {
-  const scoreGoal = useGameStore((s) => s.scoreGoal);
-  // Home attacks -Z, so a goal in the -Z net (end === -1) is a HOME goal.
-  const scoringSide = end === -1 ? "home" : "away";
   const z = lineZ * end;
   const back = z + end * GOAL_DEPTH;
+  const netMat = (
+    <meshStandardMaterial color="#f0f0f0" transparent opacity={0.28} />
+  );
 
   return (
     <group>
@@ -49,33 +48,26 @@ export function Goal({ end, lineZ }: GoalProps) {
           <meshStandardMaterial color="white" />
         </mesh>
       </RigidBody>
-      {/* Net back panel: stops the ball behind the line */}
+
+      {/* Netting: back panel (stops the ball) + two sides + roof, translucent. */}
       <RigidBody type="fixed" colliders="cuboid">
         <mesh position={[0, GOAL_HEIGHT / 2, back]}>
-          <boxGeometry args={[GOAL_WIDTH, GOAL_HEIGHT, 0.08]} />
-          <meshStandardMaterial color="#e0e0e0" transparent opacity={0.35} />
+          <boxGeometry args={[GOAL_WIDTH, GOAL_HEIGHT, 0.06]} />
+          {netMat}
         </mesh>
       </RigidBody>
-
-      {/* Score sensor: fills the whole goal-box interior (line to net), so even
-          a shot fast enough to cross the line in one physics step still registers
-          once the net stops it inside the volume. */}
-      <RigidBody
-        type="fixed"
-        colliders={false}
-        position={[0, GOAL_HEIGHT / 2, z + end * (GOAL_DEPTH / 2 + 0.15)]}
-      >
-        <CuboidCollider
-          args={[GOAL_WIDTH / 2 - 0.1, GOAL_HEIGHT / 2, GOAL_DEPTH / 2]}
-          sensor
-          onIntersectionEnter={(payload) => {
-            const data = payload.other.rigidBody?.userData as
-              | { type?: string }
-              | undefined;
-            if (data?.type === "ball") scoreGoal(scoringSide);
-          }}
-        />
-      </RigidBody>
+      <mesh position={[-GOAL_WIDTH / 2, GOAL_HEIGHT / 2, z + (end * GOAL_DEPTH) / 2]}>
+        <boxGeometry args={[0.04, GOAL_HEIGHT, GOAL_DEPTH]} />
+        {netMat}
+      </mesh>
+      <mesh position={[GOAL_WIDTH / 2, GOAL_HEIGHT / 2, z + (end * GOAL_DEPTH) / 2]}>
+        <boxGeometry args={[0.04, GOAL_HEIGHT, GOAL_DEPTH]} />
+        {netMat}
+      </mesh>
+      <mesh position={[0, GOAL_HEIGHT, z + (end * GOAL_DEPTH) / 2]}>
+        <boxGeometry args={[GOAL_WIDTH, 0.04, GOAL_DEPTH]} />
+        {netMat}
+      </mesh>
     </group>
   );
 }

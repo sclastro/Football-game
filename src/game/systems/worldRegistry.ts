@@ -3,6 +3,17 @@ import type { RapierRigidBody } from '@react-three/rapier'
 
 export type TeamSide = 'home' | 'away'
 
+export interface AiState {
+  /** Fraction of top speed this AI player runs at. */
+  speed: number
+  /** Wandering offset added to the AI's target, refreshed periodically. */
+  jitterX: number
+  jitterZ: number
+  nextJitterAt: number
+  /** The AI won't react to a new loose ball until this time (reaction delay). */
+  reactUntil: number
+}
+
 export interface PlayerRecord {
   id: string
   team: TeamSide
@@ -11,6 +22,7 @@ export interface PlayerRecord {
   position: THREE.Vector3
   spawn: [number, number, number]
   rigidBody: RapierRigidBody | null
+  ai: AiState
 }
 
 /**

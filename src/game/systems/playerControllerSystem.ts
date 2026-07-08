@@ -29,7 +29,7 @@ function lerpAngle(current: number, target: number, t: number) {
 
 export interface PlayerControllerHandle {
   /** Advances the character by one physics step using the given input. Returns current speed (m/s). */
-  update: (delta: number, input: InputState) => number;
+  update: (delta: number, input: InputState, speedScale?: number) => number;
   yaw: RefObject<number>;
   /** Zero out velocity and face the given yaw (used on kickoff teleports). */
   reset: (yaw?: number) => void;
@@ -69,7 +69,7 @@ export function usePlayerCharacterController(
     };
   }, [world]);
 
-  const update = (delta: number, input: InputState) => {
+  const update = (delta: number, input: InputState, speedScale = 1) => {
     const rigidBody = rigidBodyRef.current;
     const controller = controllerRef.current;
     if (!rigidBody || !controller) return 0;
@@ -77,7 +77,7 @@ export function usePlayerCharacterController(
     const collider = rigidBody.collider(0);
     if (!collider) return 0;
 
-    const maxSpeed = input.sprinting ? sprintSpeed : walkSpeed;
+    const maxSpeed = (input.sprinting ? sprintSpeed : walkSpeed) * speedScale;
     const hasInput = input.moveDirection.lengthSq() > 0.0001;
 
     const targetVelocity = new THREE.Vector3(

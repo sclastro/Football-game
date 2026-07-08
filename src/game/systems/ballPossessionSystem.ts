@@ -13,8 +13,18 @@ const {
   minShotImpulse,
   maxShotImpulse,
   maxChargeTime,
-  shotLift,
+  passCooldown,
 } = PHYSICS_CONFIG.ball;
+
+/** Timestamp (s) of the last pass/shot, so kicks can't be spammed. */
+const kickClock = { lastKickAt: 0 };
+
+function kickReady(): boolean {
+  return performance.now() / 1000 - kickClock.lastKickAt >= passCooldown;
+}
+function markKick(): void {
+  kickClock.lastKickAt = performance.now() / 1000;
+}
 
 /** Facing unit vector on the XZ plane for a given yaw (matches player forward). */
 export function facingVector(yaw: number, out = new THREE.Vector3()) {
@@ -47,6 +57,7 @@ export function tryShoot(
   input: InputState,
 ): boolean {
   if (!input.shootReleased) return false;
+  if (!kickReady()) return false;
   if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
 
   const charge = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
@@ -54,9 +65,11 @@ export function tryShoot(
 
   facingVector(yaw, _dir);
   _impulse.copy(_dir).multiplyScalar(power);
-  _impulse.y = power * shotLift;
+  // Ground shot: keep the ball down so it's controllable (no lofted shots).
+  _impulse.y = 0;
 
   ball.applyImpulse(_impulse, true);
+  markKick();
   return true;
 }
 
@@ -83,7 +96,7 @@ export function aiKick(
   _dir.applyAxisAngle(_up, scatter);
 
   _impulse.copy(_dir).multiplyScalar(power);
-  _impulse.y = power * shotLift * 0.6; // AI keeps it lower than a charged shot
+  _impulse.y = 0; // ground ball
   ball.applyImpulse(_impulse, true);
   return true;
 }
@@ -157,6 +170,7 @@ export function tryPass(
   playerPos: THREE.Vector3,
   yaw: number,
 ): boolean {
+  if (!kickReady()) return false;
   if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
 
   const receiver = choosePassReceiver(selfId, playerPos, yaw);
@@ -168,11 +182,12 @@ export function tryPass(
   if (dist < 0.5) return false;
   _dir.normalize();
 
-  // Enough pace to arrive briskly, gentle enough to be controllable.
+  // Enough pace to arrive briskly, gentle enough to be controllable. Ground ball.
   const power = THREE.MathUtils.clamp(dist * 0.5, 3, 9.5);
   _impulse.copy(_dir).multiplyScalar(power);
-  _impulse.y = power * 0.12; // low, driven pass
+  _impulse.y = 0;
   ball.applyImpulse(_impulse, true);
+  markKick();
 
   passState.receiverId = receiver.id;
   passState.expiresAt = performance.now() / 1000 + 2.5;
