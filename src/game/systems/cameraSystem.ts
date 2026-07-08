@@ -2,23 +2,20 @@ import { useRef } from "react";
 import * as THREE from "three";
 import { useThree } from "@react-three/fiber";
 
-// High, fixed-angle camera that sits behind the home attacking direction (+Z)
-// and looks down the pitch toward -Z. It never rotates with the player — it
-// only translates to follow, so "up the pitch" is always up the screen.
-const HEIGHT = 15; // metres above the pitch
-const BACK = 13; // metres behind the player (+Z)
-const LOOK_AHEAD = 6; // look this far ahead of the player (toward -Z)
+// Broadcast side camera: sits high on one long touchline (+X) and looks ACROSS
+// the pitch toward -X, so both goals and the far stand are in view. It pans
+// gently along the pitch length (Z) with the player but never rotates, so the
+// whole match stays legible.
+const SIDE_X = 40; // distance out along +X
+const HEIGHT = 20;
+const FOLLOW_Z = 0.45; // how much the camera tracks the player along the pitch
+const LOOK_X = -2; // aim slightly past the centre toward the far side
 const LOOK_HEIGHT = 1.5;
-// Follow gains: the camera tracks lateral (X) and along-pitch (Z) motion, but
-// gently, so it drifts rather than sticking rigidly to the player.
-const FOLLOW_X = 0.8;
 const POS_SMOOTH = 3.5;
 const LOOK_SMOOTH = 5;
 
 /**
- * Fixed-angle follow camera. `targetPosition` is the controlled player; yaw is
- * ignored (the camera orientation is constant) so pressing forward never spins
- * the view.
+ * Fixed-orientation side camera. `targetPosition` is the controlled player.
  */
 export function useCameraSystem() {
   const { camera } = useThree();
@@ -28,18 +25,9 @@ export function useCameraSystem() {
   const initialized = useRef(false);
 
   const update = (delta: number, targetPosition: THREE.Vector3) => {
-    // Camera position: behind (+Z) and above, panning with the player. Lateral
-    // follow is damped so the player can drift across frame a little.
-    desiredPos.current.set(
-      targetPosition.x * FOLLOW_X,
-      HEIGHT,
-      targetPosition.z + BACK,
-    );
-    desiredLook.current.set(
-      targetPosition.x * FOLLOW_X,
-      LOOK_HEIGHT,
-      targetPosition.z - LOOK_AHEAD,
-    );
+    const z = targetPosition.z * FOLLOW_Z;
+    desiredPos.current.set(SIDE_X, HEIGHT, z);
+    desiredLook.current.set(LOOK_X, LOOK_HEIGHT, z);
 
     if (!initialized.current) {
       camera.position.copy(desiredPos.current);

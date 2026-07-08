@@ -108,6 +108,7 @@ export function PlayerEntity({
       team,
       isGoalkeeper,
       position: new THREE.Vector3(...spawnPosition),
+      yaw: 0,
       spawn: spawnPosition,
       rigidBody: null,
       ai: makeAiState(),
@@ -183,6 +184,7 @@ export function PlayerEntity({
       group.position.set(t.x, t.y, t.z);
       group.quaternion.set(r.x, r.y, r.z, r.w);
       record.position.set(t.x, t.y, t.z);
+      record.yaw = yaw.current;
       record.rigidBody = rigidBody;
     }
 

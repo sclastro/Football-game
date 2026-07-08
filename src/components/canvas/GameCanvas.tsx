@@ -9,7 +9,7 @@ import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
 import { Benches } from "@/game/entities/Bench";
 import { MatchClock } from "@/game/systems/matchClockSystem";
-import { PassMonitor } from "@/game/systems/passMonitorSystem";
+import { PossessionController } from "@/game/systems/possessionSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
 import { TEAMS, ROSTERS } from "@/game/data/teams";
 import { useGameStore } from "@/game/state/gameStore";
@@ -24,7 +24,12 @@ export function GameCanvas() {
   const homeStarters = useGameStore((s) => s.homeStarters);
 
   return (
-    <Canvas shadows camera={{ fov: 52, near: 0.1, far: 400 }}>
+    <Canvas
+      shadows
+      dpr={[1, 2]}
+      gl={{ antialias: true }}
+      camera={{ fov: 46, near: 0.1, far: 400 }}
+    >
       <color attach="background" args={["#8ec9e8"]} />
       <fog attach="fog" args={["#a9d3ea", 70, 190]} />
       <hemisphereLight args={["#eaf4ff", "#4a6a3a", 0.7]} />
@@ -46,7 +51,7 @@ export function GameCanvas() {
       <PitchDressing />
       <Benches homeColor={home.kitColor} awayColor={away.kitColor} />
       <MatchClock />
-      <PassMonitor />
+      <PossessionController />
 
       <Physics gravity={PHYSICS_CONFIG.gravity}>
         <Field />

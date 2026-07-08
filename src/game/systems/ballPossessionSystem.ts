@@ -4,9 +4,15 @@ import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import type { InputState } from "./inputSystem";
 import {
   playerRegistry,
-  passState,
+  dribbleState,
   type PlayerRecord,
 } from "./worldRegistry";
+
+/** Seconds the ball is free of carry control after a kick, so it can leave. */
+const RELEASE_TIME = 0.4;
+function releaseBall() {
+  dribbleState.releaseUntil = performance.now() / 1000 + RELEASE_TIME;
+}
 
 const {
   kickRange,
@@ -70,6 +76,7 @@ export function tryShoot(
 
   ball.applyImpulse(_impulse, true);
   markKick();
+  releaseBall();
   return true;
 }
 
@@ -98,6 +105,7 @@ export function aiKick(
   _impulse.copy(_dir).multiplyScalar(power);
   _impulse.y = 0; // ground ball
   ball.applyImpulse(_impulse, true);
+  releaseBall();
   return true;
 }
 
@@ -161,8 +169,9 @@ export function choosePassReceiver(
 }
 
 /**
- * Kick the ball toward a teammate with distance-scaled power and register the
- * pass for auto-switch. Returns true if the pass was struck.
+ * Kick the ball toward a teammate with distance-scaled power. Control follows
+ * the ball automatically (see PossessionController), so no separate tracking.
+ * Returns true if the pass was struck.
  */
 export function tryPass(
   ball: RapierRigidBody,
@@ -188,8 +197,6 @@ export function tryPass(
   _impulse.y = 0;
   ball.applyImpulse(_impulse, true);
   markKick();
-
-  passState.receiverId = receiver.id;
-  passState.expiresAt = performance.now() / 1000 + 2.5;
+  releaseBall();
   return true;
 }

@@ -9,8 +9,9 @@ const LINE_Z = FIELD_DIMENSIONS.length / 2;
 const HALF_GOAL_W = GOAL_DIMENSIONS.width / 2;
 const GOAL_H = GOAL_DIMENSIONS.height;
 const BALL_R = PHYSICS_CONFIG.ball.radius;
-const OUT_X = FIELD_DIMENSIONS.width / 2 + 3;
-const OUT_Z = FIELD_DIMENSIONS.length / 2 + 6;
+// Just outside the containing walls: any ball past here has escaped play.
+const OUT_X = FIELD_DIMENSIONS.width / 2 + 1.6;
+const OUT_Z = FIELD_DIMENSIONS.length / 2 + 3.6;
 
 /**
  * Drives match flow from the render loop: ticks the countdown, detects goals by

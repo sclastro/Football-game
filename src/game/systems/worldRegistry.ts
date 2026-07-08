@@ -20,6 +20,8 @@ export interface PlayerRecord {
   isGoalkeeper: boolean
   /** Live world position, updated every frame by the entity. */
   position: THREE.Vector3
+  /** Live facing yaw (radians), updated every frame by the entity. */
+  yaw: number
   spawn: [number, number, number]
   rigidBody: RapierRigidBody | null
   ai: AiState
@@ -35,12 +37,33 @@ export const playerRegistry = new Map<string, PlayerRecord>()
 export const ballApi: { body: RapierRigidBody | null } = { body: null }
 
 /**
- * In-flight pass being tracked for auto-switch: when the ball reaches the
- * receiver, control jumps to them. Cleared on connect, expiry, or reset.
+ * Ball-carry state. `possessorId` is whoever currently controls the ball at
+ * their feet; `releaseUntil` briefly disables the carry after a kick so the
+ * ball actually leaves.
  */
-export const passState: { receiverId: string | null; expiresAt: number } = {
-  receiverId: null,
-  expiresAt: 0,
+export const dribbleState: { possessorId: string | null; releaseUntil: number } = {
+  possessorId: null,
+  releaseUntil: 0,
+}
+
+/** Nearest player of any team to the ball within `radius`, optionally incl. GK. */
+export function nearestPlayerToBall(
+  radius: number,
+  includeGk = true,
+): PlayerRecord | null {
+  const ball = ballPosition(_scratch)
+  if (!ball) return null
+  let best: PlayerRecord | null = null
+  let bestDist = radius * radius
+  for (const rec of playerRegistry.values()) {
+    if (!includeGk && rec.isGoalkeeper) continue
+    const d = rec.position.distanceToSquared(ball)
+    if (d < bestDist) {
+      bestDist = d
+      best = rec
+    }
+  }
+  return best
 }
 
 export function ballPosition(out = new THREE.Vector3()): THREE.Vector3 | null {
