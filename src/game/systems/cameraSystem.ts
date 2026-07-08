@@ -6,10 +6,10 @@ import { useThree } from "@react-three/fiber";
 // the pitch toward -X, so both goals and the far stand are in view. It pans
 // gently along the pitch length (Z) with the player but never rotates, so the
 // whole match stays legible.
-const SIDE_X = 40; // distance out along +X
-const HEIGHT = 20;
-const FOLLOW_Z = 0.45; // how much the camera tracks the player along the pitch
-const LOOK_X = -2; // aim slightly past the centre toward the far side
+const SIDE_X = 34; // distance out along +X (near stand is removed, so view is clear)
+const HEIGHT = 17;
+const FOLLOW_Z = 0.5; // how much the camera tracks the player along the pitch
+const LOOK_X = -3; // aim slightly past the centre toward the far side
 const LOOK_HEIGHT = 1.5;
 const POS_SMOOTH = 3.5;
 const LOOK_SMOOTH = 5;

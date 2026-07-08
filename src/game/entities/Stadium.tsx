@@ -56,8 +56,9 @@ export function Stadium() {
   const people = useMemo(() => {
     const perLong = Math.floor((length + 8) / SPACING);
     const perShort = Math.floor((width + 8) / SPACING);
+    // NOTE: no crowd on the +X touchline — the broadcast camera sits there, so
+    // that stand would block the view (it's "behind" the camera in real life).
     return [
-      ...buildSide(perLong, (a, b, h) => [halfW + b, h, a]),
       ...buildSide(perLong, (a, b, h) => [-halfW - b, h, a]),
       ...buildSide(perShort, (a, b, h) => [a, h, halfL + b]),
       ...buildSide(perShort, (a, b, h) => [a, h, -halfL - b]),
@@ -134,7 +135,7 @@ export function Stadium() {
 
   return (
     <group>
-      <Stand cx={backW} cz={0} along={length + 10} horizontal />
+      {/* Near (+X) stand intentionally omitted — the camera sits there. */}
       <Stand cx={-backW} cz={0} along={length + 10} horizontal />
       <Stand cx={0} cz={backL} along={width + 10} horizontal={false} />
       <Stand cx={0} cz={-backL} along={width + 10} horizontal={false} />

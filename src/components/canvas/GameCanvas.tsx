@@ -28,7 +28,7 @@ export function GameCanvas() {
       shadows
       dpr={[1, 2]}
       gl={{ antialias: true }}
-      camera={{ fov: 46, near: 0.1, far: 400 }}
+      camera={{ fov: 50, near: 0.1, far: 400 }}
     >
       <color attach="background" args={["#8ec9e8"]} />
       <fog attach="fog" args={["#a9d3ea", 80, 210]} />
