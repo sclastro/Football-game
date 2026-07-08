@@ -21,17 +21,27 @@ export function Scoreboard() {
 
   return (
     <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 select-none font-sans">
-      <div className="flex items-stretch overflow-hidden rounded-lg shadow-lg ring-1 ring-black/20">
+      <div className="flex items-stretch overflow-hidden rounded-md shadow-xl ring-1 ring-white/10">
+        {/* Colour accent bars either side */}
+        <div className="w-1.5" style={{ backgroundColor: home.kitColor }} />
         <TeamCell color={home.kitColor} flag={home.flag} short={home.short} />
-        <div className="flex flex-col items-center justify-center bg-neutral-900 px-4 py-1.5 text-white">
-          <div className="text-2xl font-bold leading-none tracking-wider tabular-nums">
-            {score.home} <span className="text-neutral-500">-</span> {score.away}
-          </div>
-          <div className="mt-0.5 text-xs font-medium tabular-nums text-emerald-400">
-            {phase === "fulltime" ? "FULL TIME" : formatClock(clock)}
+        <div className="flex flex-col items-center justify-center bg-neutral-950/95 px-3 py-1">
+          <div className="text-[26px] font-black leading-none tracking-wide tabular-nums text-white">
+            {score.home}<span className="mx-1 text-neutral-600">:</span>{score.away}
           </div>
         </div>
         <TeamCell color={away.kitColor} flag={away.flag} short={away.short} />
+        <div className="w-1.5" style={{ backgroundColor: away.kitColor }} />
+      </div>
+      {/* Timer pill under the score */}
+      <div className="mx-auto -mt-0.5 w-fit rounded-b-md bg-neutral-950/95 px-3 pb-0.5 pt-1">
+        <span
+          className={`text-xs font-bold tabular-nums tracking-widest ${
+            phase === "fulltime" ? "text-red-400" : "text-emerald-400"
+          }`}
+        >
+          {phase === "fulltime" ? "FULL TIME" : `⏱ ${formatClock(clock)}`}
+        </span>
       </div>
     </div>
   );
@@ -47,24 +57,15 @@ function TeamCell({
   short: string;
 }) {
   return (
-    <div
-      className="flex items-center gap-2 px-4 py-1.5"
-      style={{ backgroundColor: color, color: readableText(color) }}
-    >
-      <span className="text-lg leading-none">{flag}</span>
-      <span className="text-lg font-bold tracking-wide">{short}</span>
+    <div className="flex items-center gap-2 bg-neutral-900/95 px-3 py-1.5 text-white">
+      <span className="text-xl leading-none">{flag}</span>
+      <span className="text-lg font-extrabold tracking-wide">{short}</span>
+      <span
+        className="ml-0.5 h-4 w-1 rounded-full"
+        style={{ backgroundColor: color }}
+      />
     </div>
   );
-}
-
-/** Pick black/white text for contrast against a hex background. */
-function readableText(hex: string): string {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.6 ? "#111" : "#fff";
 }
 
 /** Big centre-screen GOAL! flash, shown briefly after a goal. */

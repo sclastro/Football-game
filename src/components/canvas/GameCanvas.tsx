@@ -3,6 +3,7 @@ import { Physics } from "@react-three/rapier";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { Field, FIELD_DIMENSIONS } from "@/game/entities/Field";
 import { Stadium } from "@/game/entities/Stadium";
+import { PitchDressing } from "@/game/entities/PitchDressing";
 import { Ball } from "@/game/entities/Ball";
 import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
@@ -23,12 +24,26 @@ export function GameCanvas() {
   const homeStarters = useGameStore((s) => s.homeStarters);
 
   return (
-    <Canvas camera={{ fov: 52, near: 0.1, far: 400 }}>
+    <Canvas shadows camera={{ fov: 52, near: 0.1, far: 400 }}>
       <color attach="background" args={["#8ec9e8"]} />
-      <ambientLight intensity={0.75} />
-      <directionalLight position={[24, 40, 20]} intensity={1.15} />
+      <fog attach="fog" args={["#a9d3ea", 70, 190]} />
+      <hemisphereLight args={["#eaf4ff", "#4a6a3a", 0.7]} />
+      <ambientLight intensity={0.35} />
+      <directionalLight
+        position={[28, 46, 18]}
+        intensity={1.25}
+        castShadow
+        shadow-mapSize={[2048, 2048]}
+        shadow-camera-left={-45}
+        shadow-camera-right={45}
+        shadow-camera-top={45}
+        shadow-camera-bottom={-45}
+        shadow-camera-near={1}
+        shadow-camera-far={140}
+      />
 
       <Stadium />
+      <PitchDressing />
       <Benches homeColor={home.kitColor} awayColor={away.kitColor} />
       <MatchClock />
       <PassMonitor />
