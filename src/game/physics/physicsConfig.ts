@@ -12,14 +12,14 @@ export const PHYSICS_CONFIG = {
     mass: 80,
   },
   ball: {
-    radius: 0.22, // ~ real football scaled to our blocky players
+    radius: 0.32, // larger so it reads clearly from the high camera
     mass: 0.45, // kg-ish; light enough to move, heavy enough not to fly off
     restitution: 0.55, // bounciness
     friction: 0.7,
     linearDamping: 0.6, // air + rolling resistance so it slows to a stop
     angularDamping: 0.8,
     /** Distance from player centre within which a shot/kick connects. */
-    kickRange: 1.1,
+    kickRange: 1.3,
     /** Base impulse for a tapped shot; scales up to maxShotImpulse when charged. */
     minShotImpulse: 4,
     maxShotImpulse: 11,

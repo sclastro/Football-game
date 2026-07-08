@@ -21,12 +21,13 @@ export const FORMATION: FormationSlot[] = [
   { role: 'FWD', isGoalkeeper: false, x: 0, z: 6 },
 ]
 
-/** Home home-position for a slot (defends -Z). */
+// Home defends +Z (the goal nearest the camera) and attacks -Z; away mirrors.
+/** Home home-position for a slot (defends +Z, near camera). */
 export function homePosition(slot: FormationSlot): [number, number, number] {
-  return [slot.x, 1, slot.z]
+  return [slot.x, 1, -slot.z]
 }
 
-/** Away home-position mirrors along Z (defends +Z) and flips X for symmetry. */
+/** Away home-position mirrors: defends -Z, attacks +Z. */
 export function awayPosition(slot: FormationSlot): [number, number, number] {
-  return [-slot.x, 1, -slot.z]
+  return [-slot.x, 1, slot.z]
 }

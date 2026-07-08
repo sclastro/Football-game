@@ -8,37 +8,35 @@ import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
 import { Benches } from "@/game/entities/Bench";
 import { MatchClock } from "@/game/systems/matchClockSystem";
-import { ControlSwitcher } from "@/game/systems/controlSwitchSystem";
 import { PassMonitor } from "@/game/systems/passMonitorSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
-import { TEAMS, DEFAULT_HOME_TEAM, DEFAULT_AWAY_TEAM, ROSTERS } from "@/game/data/teams";
+import { TEAMS, ROSTERS } from "@/game/data/teams";
 import { useGameStore } from "@/game/state/gameStore";
 
-const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2 - 1;
+const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2;
 
 export function GameCanvas() {
-  const home = TEAMS[DEFAULT_HOME_TEAM];
-  const away = TEAMS[DEFAULT_AWAY_TEAM];
+  const home = TEAMS[useGameStore((s) => s.homeTeamId)];
+  const away = TEAMS[useGameStore((s) => s.awayTeamId)];
   // Entities are keyed by roster player id, so a substitution unmounts the
   // outgoing player and mounts the incoming one at the slot's spawn point.
   const homeStarters = useGameStore((s) => s.homeStarters);
 
   return (
-    <Canvas camera={{ fov: 55, near: 0.1, far: 300 }}>
-      <color attach="background" args={["#87ceeb"]} />
-      <ambientLight intensity={0.7} />
-      <directionalLight position={[30, 40, 10]} intensity={1.1} />
+    <Canvas camera={{ fov: 52, near: 0.1, far: 400 }}>
+      <color attach="background" args={["#8ec9e8"]} />
+      <ambientLight intensity={0.75} />
+      <directionalLight position={[24, 40, 20]} intensity={1.15} />
 
       <Stadium />
       <Benches homeColor={home.kitColor} awayColor={away.kitColor} />
       <MatchClock />
-      <ControlSwitcher />
       <PassMonitor />
 
       <Physics gravity={PHYSICS_CONFIG.gravity}>
         <Field />
         <Ball />
-        {/* Home defends -Z, attacks +Z; away mirrored. */}
+        {/* Home attacks -Z, away attacks +Z. */}
         <Goal end={-1} lineZ={GOAL_LINE_Z} />
         <Goal end={1} lineZ={GOAL_LINE_Z} />
 

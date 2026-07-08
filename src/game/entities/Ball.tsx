@@ -9,6 +9,16 @@ const { radius, mass, restitution, friction, linearDamping, angularDamping } =
 
 const KICKOFF_SPOT = { x: 0, y: radius + 0.05, z: 0 };
 
+// Roughly icosahedral patch directions (unit-ish) for the classic panel look.
+const BALL_PATCHES: [number, number, number][] = [
+  [0, 1, 0],
+  [0, -1, 0],
+  [0.9, 0.3, 0],
+  [-0.9, 0.3, 0],
+  [0, 0.3, 0.9],
+  [0, 0.3, -0.9],
+];
+
 /**
  * Dynamic football: bounces, rolls and slows to a stop via damping.
  * Registers itself into the world registry and returns to the centre spot
@@ -52,14 +62,16 @@ export function Ball({
     >
       <BallCollider args={[radius]} />
       <mesh castShadow>
-        <sphereGeometry args={[radius, 16, 16]} />
-        <meshStandardMaterial color="white" />
+        <sphereGeometry args={[radius, 20, 20]} />
+        <meshStandardMaterial color="white" roughness={0.55} />
       </mesh>
-      {/* A dark patch so spin is visible. */}
-      <mesh position={[0, radius * 0.6, 0]}>
-        <sphereGeometry args={[radius * 0.5, 6, 6]} />
-        <meshStandardMaterial color="#222" />
-      </mesh>
+      {/* Dark facets around the ball so spin and position read clearly. */}
+      {BALL_PATCHES.map((p, i) => (
+        <mesh key={i} position={[p[0] * radius, p[1] * radius, p[2] * radius]}>
+          <sphereGeometry args={[radius * 0.34, 6, 6]} />
+          <meshStandardMaterial color="#1a1a1a" />
+        </mesh>
+      ))}
     </RigidBody>
   );
 }

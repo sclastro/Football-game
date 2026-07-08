@@ -20,7 +20,8 @@ interface GoalProps {
  */
 export function Goal({ end, lineZ }: GoalProps) {
   const scoreGoal = useGameStore((s) => s.scoreGoal);
-  const scoringSide = end === 1 ? "home" : "away";
+  // Home attacks -Z, so a goal in the -Z net (end === -1) is a HOME goal.
+  const scoringSide = end === -1 ? "home" : "away";
   const z = lineZ * end;
   const back = z + end * GOAL_DEPTH;
 

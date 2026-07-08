@@ -90,17 +90,18 @@ export function PlayerEntity({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [id],
   );
+  // Home attacks -Z (the far goal, up the screen); away attacks +Z.
   const opponentGoal = useMemo(
     () =>
       new THREE.Vector3(
         0,
         0,
-        team === "home" ? FIELD_DIMENSIONS.length / 2 : -FIELD_DIMENSIONS.length / 2,
+        team === "home" ? -FIELD_DIMENSIONS.length / 2 : FIELD_DIMENSIONS.length / 2,
       ),
     [team],
   );
-  // Face the opponent goal at kickoff: home attacks +Z (yaw PI), away -Z (yaw 0).
-  const kickoffYaw = team === "home" ? Math.PI : 0;
+  // Face the attacking goal at kickoff: home faces -Z (yaw 0, matches W), away +Z.
+  const kickoffYaw = team === "home" ? 0 : Math.PI;
 
   // Register into the shared world registry.
   useEffect(() => {
@@ -202,7 +203,7 @@ export function PlayerEntity({
     }
 
     if (controlled && group) {
-      updateCamera(delta, group.position, yaw.current);
+      updateCamera(delta, group.position);
     }
   });
 

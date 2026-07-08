@@ -7,8 +7,6 @@ import {
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
 
-/** How close the ball must be before a non-designated chaser presses anyway. */
-const PRESS_RADIUS = 6
 /** Chasers further than this from the ball sprint. */
 const SPRINT_DISTANCE = 7
 /** GK stays within this x of the goal centre. */
@@ -42,17 +40,19 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
   }
 
   const distToBall = rec.position.distanceTo(ball)
-  const shouldChase = isClosestTeammateToBall(rec.id) || distToBall < PRESS_RADIUS
 
-  if (shouldChase) {
+  // Only the single closest teammate chases; everyone else holds shape. This is
+  // what stops the whole team collapsing onto the ball in one corner.
+  if (isClosestTeammateToBall(rec.id)) {
     _target.copy(ball)
     input.sprinting = distToBall > SPRINT_DISTANCE
   } else {
-    // Hold formation, shaded 25% toward the ball so the shape breathes.
+    // Hold formation, shaded toward the ball's along-pitch (Z) position so the
+    // line pushes up and drops back together, but keep lateral spacing.
     _target.set(
-      rec.spawn[0] + (ball.x - rec.spawn[0]) * 0.25,
+      rec.spawn[0] + (ball.x - rec.spawn[0]) * 0.15,
       0,
-      rec.spawn[2] + (ball.z - rec.spawn[2]) * 0.25,
+      rec.spawn[2] + (ball.z - rec.spawn[2]) * 0.35,
     )
   }
 

@@ -1,7 +1,6 @@
 import { GameCanvas } from "@/components/canvas/GameCanvas";
 import { HUD } from "@/components/ui/HUD";
 import { Scoreboard, GoalFlash } from "@/components/ui/Scoreboard";
-import { SubPanel } from "@/components/ui/SubPanel";
 
 export default function GameShell() {
   return (
@@ -10,7 +9,6 @@ export default function GameShell() {
       <Scoreboard />
       <GoalFlash />
       <HUD />
-      <SubPanel />
     </div>
   );
 }
