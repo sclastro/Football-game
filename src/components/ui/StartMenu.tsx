@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useGameStore, DURATION_OPTIONS } from "@/game/state/gameStore";
+import { audio } from "@/game/systems/audio";
 import { TEAMS, TEAM_IDS, DEFAULT_HOME_TEAM } from "@/game/data/teams";
 import type { ControlMode } from "@/game/state/types";
 
@@ -94,7 +95,10 @@ export function StartMenu() {
         </Section>
 
         <button
-          onClick={() => startMatch(teamId, duration)}
+          onClick={() => {
+            audio.resume(); // unlock audio from this user gesture
+            startMatch(teamId, duration);
+          }}
           className="mt-8 rounded-full bg-yellow-400 px-10 py-3 text-lg font-black text-emerald-950 shadow-lg transition hover:bg-yellow-300 active:scale-95"
         >
           KICK OFF ▶

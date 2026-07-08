@@ -6,6 +6,7 @@ import { Billboard } from "@react-three/drei";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { PLAYER_INFO } from "@/game/data/teams";
 import { numberTexture } from "@/game/utils/textures";
+import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
 import { useCameraSystem } from "@/game/systems/cameraSystem";
@@ -191,11 +192,13 @@ export function PlayerEntity({
       if (controlled) {
         if (tryShoot(ball, record.position, yaw.current, input)) {
           kickTimer.current = KICK_DURATION;
+          audio.kick();
         } else if (
           input.passPressed &&
           tryPass(ball, id, record.position, yaw.current)
         ) {
           kickTimer.current = KICK_DURATION;
+          audio.kick();
         }
       } else {
         aiKickCooldown.current = Math.max(0, aiKickCooldown.current - delta);
@@ -215,10 +218,10 @@ export function PlayerEntity({
     animPhase.current += delta * (4 + speedFraction * 8);
     const swing = Math.sin(animPhase.current) * speedFraction * 0.7;
 
-    if (leftLegRef.current) leftLegRef.current.rotation.x = swing;
-    if (rightLegRef.current) rightLegRef.current.rotation.x = -swing;
-    if (leftArmRef.current) leftArmRef.current.rotation.x = -swing;
-    if (rightArmRef.current) rightArmRef.current.rotation.x = swing;
+    if (leftLegRef.current) leftLegRef.current.rotation.set(swing, 0, 0);
+    if (rightLegRef.current) rightLegRef.current.rotation.set(-swing, 0, 0);
+    if (leftArmRef.current) leftArmRef.current.rotation.set(-swing, 0, 0);
+    if (rightArmRef.current) rightArmRef.current.rotation.set(swing, 0, 0);
 
     // Kick animation: overrides the right leg with a sharp forward swing.
     if (kickTimer.current > 0) {
@@ -226,6 +229,20 @@ export function PlayerEntity({
       const t = 1 - kickTimer.current / KICK_DURATION;
       const kickSwing = Math.sin(t * Math.PI) * -1.4;
       if (rightLegRef.current) rightLegRef.current.rotation.x = kickSwing;
+    }
+
+    // Goal celebration: the scoring team leaps with arms raised.
+    if (
+      phase === "goalStoppage" &&
+      useGameStore.getState().lastScorer === record.team &&
+      group
+    ) {
+      const tsec = performance.now() / 1000;
+      group.position.y += Math.abs(Math.sin(tsec * 6)) * 0.3;
+      if (leftArmRef.current) leftArmRef.current.rotation.set(0, 0, 2.5);
+      if (rightArmRef.current) rightArmRef.current.rotation.set(0, 0, -2.5);
+      if (leftLegRef.current) leftLegRef.current.rotation.set(0, 0, 0);
+      if (rightLegRef.current) rightLegRef.current.rotation.set(0, 0, 0);
     }
 
     if (controlled && group) {

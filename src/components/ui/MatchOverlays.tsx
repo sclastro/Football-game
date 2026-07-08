@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useGameStore } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
 import type { ControlMode } from "@/game/state/types";
+import { audio } from "@/game/systems/audio";
 
 /** Full-time result card with a way back to the menu / rematch. */
 export function FullTimeOverlay() {
@@ -58,6 +59,7 @@ export function FullTimeOverlay() {
 /** Small gear button that opens in-match settings (controls + quit). */
 export function SettingsMenu() {
   const [open, setOpen] = useState(false);
+  const [soundOn, setSoundOn] = useState(true);
   const controlMode = useGameStore((s) => s.controlMode);
   const setControlMode = useGameStore((s) => s.setControlMode);
   const backToMenu = useGameStore((s) => s.backToMenu);
@@ -90,6 +92,17 @@ export function SettingsMenu() {
               </button>
             ))}
           </div>
+          <button
+            className="mb-2 flex w-full items-center justify-between rounded-md bg-white/10 px-2 py-1.5 text-xs font-semibold hover:bg-white/20"
+            onClick={() => {
+              const next = !soundOn;
+              setSoundOn(next);
+              audio.setEnabled(next);
+            }}
+          >
+            <span>Sound</span>
+            <span>{soundOn ? "🔊 On" : "🔈 Off"}</span>
+          </button>
           <button
             className="w-full rounded-md bg-white/10 px-2 py-1.5 text-xs font-semibold hover:bg-white/20"
             onClick={backToMenu}

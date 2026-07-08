@@ -39,6 +39,8 @@ export interface MatchState {
   controlledPlayerId: string;
   /** Set briefly when a goal is scored so the HUD can show a GOAL! flash. */
   goalFlashUntil: number;
+  /** Which side scored the most recent goal (drives the celebration). */
+  lastScorer: "home" | "away" | null;
   /** Incremented to signal every entity to teleport back to its kickoff spot. */
   resetNonce: number;
   /** Player ids currently on the pitch for the user's team, slot-aligned to FORMATION. */

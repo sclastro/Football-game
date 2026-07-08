@@ -50,6 +50,7 @@ const initialState: MatchState = {
   clock: DEFAULT_DURATION,
   phase: "live",
   goalFlashUntil: 0,
+  lastScorer: null,
   resetNonce: 0,
   ...freshRoster(),
 };
@@ -76,6 +77,7 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
         score: { ...s.score, [side]: s.score[side] + 1 },
         goalFlashUntil: performance.now() / 1000 + GOAL_FLASH_DURATION,
         phase: "goalStoppage",
+        lastScorer: side,
       };
     }),
 
@@ -96,6 +98,7 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
       score: { home: 0, away: 0 },
       phase: "live",
       goalFlashUntil: 0,
+      lastScorer: null,
       resetNonce: s.resetNonce + 1,
       ...freshRoster(),
     })),

@@ -81,7 +81,8 @@ export function ballTexture(): THREE.CanvasTexture {
         const a = (Math.PI / 3) * i + Math.PI / 6;
         const px = cx + R * Math.cos(a);
         const py = cy + R * Math.sin(a);
-        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+        if (i === 0) ctx.moveTo(px, py);
+        else ctx.lineTo(px, py);
       }
       ctx.closePath();
       if ((row * 3 + col * 5) % 4 === 0) {
