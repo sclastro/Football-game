@@ -76,6 +76,7 @@ export function PlayerEntity({
 
   const rigidBodyRef = useRef<RapierRigidBody>(null);
   const modelGroupRef = useRef<THREE.Group>(null);
+  const leanRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
@@ -225,6 +226,9 @@ export function PlayerEntity({
     if (leftArmRef.current) leftArmRef.current.rotation.set(-swing, 0, 0);
     if (rightArmRef.current) rightArmRef.current.rotation.set(swing, 0, 0);
 
+    // Athletic forward lean while running (model faces -Z, so lean = -rot.x).
+    if (leanRef.current) leanRef.current.rotation.x = -speedFraction * 0.18;
+
     // Kick animation: overrides the right leg with a sharp forward swing.
     if (kickTimer.current > 0) {
       kickTimer.current = Math.max(0, kickTimer.current - delta);
@@ -276,7 +280,7 @@ export function PlayerEntity({
       </RigidBody>
 
       <group ref={modelGroupRef}>
-        <group position={[0, MODEL_Y_OFFSET, 0]}>
+        <group ref={leanRef} position={[0, MODEL_Y_OFFSET, 0]}>
           {/* Shorts */}
           <mesh castShadow position={[0, 0.08, 0]}>
             <boxGeometry args={[0.52, 0.22, 0.32]} />

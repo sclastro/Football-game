@@ -31,14 +31,16 @@ export function GameCanvas() {
       camera={{ fov: 46, near: 0.1, far: 400 }}
     >
       <color attach="background" args={["#8ec9e8"]} />
-      <fog attach="fog" args={["#a9d3ea", 70, 190]} />
-      <hemisphereLight args={["#eaf4ff", "#4a6a3a", 0.7]} />
-      <ambientLight intensity={0.35} />
+      <fog attach="fog" args={["#a9d3ea", 80, 210]} />
+      <hemisphereLight args={["#eaf4ff", "#3f5f34", 0.65]} />
+      <ambientLight intensity={0.3} />
       <directionalLight
-        position={[28, 46, 18]}
-        intensity={1.25}
+        position={[30, 50, 22]}
+        intensity={1.5}
+        color="#fff6e6"
         castShadow
         shadow-mapSize={[2048, 2048]}
+        shadow-bias={-0.0004}
         shadow-camera-left={-45}
         shadow-camera-right={45}
         shadow-camera-top={45}
@@ -46,6 +48,8 @@ export function GameCanvas() {
         shadow-camera-near={1}
         shadow-camera-far={140}
       />
+      {/* Cool fill from the far side to soften shadows */}
+      <directionalLight position={[-30, 24, -18]} intensity={0.35} color="#bcd4ff" />
 
       <Stadium />
       <PitchDressing />
