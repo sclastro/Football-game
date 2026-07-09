@@ -10,11 +10,17 @@ import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
 import { useCameraSystem } from "@/game/systems/cameraSystem";
-import { tryShoot, tryPass, aiKick } from "@/game/systems/ballPossessionSystem";
+import {
+  tryShoot,
+  tryPass,
+  aiKick,
+  choosePassReceiver,
+} from "@/game/systems/ballPossessionSystem";
 import { computeAiInput, makeAiState } from "@/game/systems/aiSystem";
 import { useGameStore } from "@/game/state/gameStore";
 import {
   ballApi,
+  dribbleState,
   playerRegistry,
   type PlayerRecord,
   type TeamSide,
@@ -205,11 +211,47 @@ export function PlayerEntity({
         }
       } else {
         aiKickCooldown.current = Math.max(0, aiKickCooldown.current - delta);
-        if (aiKickCooldown.current === 0) {
-          const kicked = aiKick(ball, record.position, opponentGoal, AI_KICK_POWER);
+        const possessorId = dribbleState.possessorId;
+        const possessorRec = possessorId ? playerRegistry.get(possessorId) : null;
+        const teammateHasBall =
+          !!possessorRec && possessorRec.team === team && possessorId !== id;
+
+        // Discipline: NEVER kick a ball a teammate is carrying (this was what
+        // made the ball randomly fly off the user's feet).
+        if (!teammateHasBall && aiKickCooldown.current === 0) {
+          let kicked = false;
+
+          if (possessorId === id) {
+            // I'm carrying: shoot when in range, occasionally lay a pass to a
+            // teammate, otherwise keep dribbling (movement handles it).
+            const distToGoal = record.position.distanceTo(opponentGoal);
+            if (distToGoal < 15) {
+              kicked = aiKick(ball, record.position, opponentGoal, 8.5);
+            } else if (Math.random() < 0.35) {
+              const receiver = choosePassReceiver(id, record.position, yaw.current);
+              if (receiver) {
+                const d = record.position.distanceTo(receiver.position);
+                kicked = aiKick(
+                  ball,
+                  record.position,
+                  receiver.position,
+                  THREE.MathUtils.clamp(d * 0.5, 3, 8),
+                );
+              }
+            }
+          } else if (possessorRec && possessorRec.team !== team) {
+            // Opponent is carrying: tackle — poke the ball away, not a punt.
+            kicked = aiKick(ball, record.position, opponentGoal, 4);
+          } else {
+            // Loose ball: clear/advance it toward the attacking end.
+            kicked = aiKick(ball, record.position, opponentGoal, AI_KICK_POWER);
+          }
+
           if (kicked) {
             kickTimer.current = KICK_DURATION;
-            aiKickCooldown.current = AI_KICK_COOLDOWN;
+            aiKickCooldown.current = AI_KICK_COOLDOWN + Math.random() * 0.6;
+          } else {
+            aiKickCooldown.current = 0.15; // re-evaluate shortly
           }
         }
       }

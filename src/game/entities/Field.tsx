@@ -142,19 +142,15 @@ export function Field() {
           <boxGeometry args={[FIELD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS]} />
         </mesh>
       </RigidBody>
+      {/* Side walls sit 3m beyond the touchlines: pure safety nets. The ball
+          fully crosses the line first, so out-of-play detection can fire. */}
       <RigidBody type="fixed" colliders="cuboid">
-        <mesh
-          position={[-HALF_W - WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0]}
-          visible={false}
-        >
+        <mesh position={[-HALF_W - 3, WALL_HEIGHT / 2, 0]} visible={false}>
           <boxGeometry args={[WALL_THICKNESS, WALL_HEIGHT, FIELD_LENGTH + 10]} />
         </mesh>
       </RigidBody>
       <RigidBody type="fixed" colliders="cuboid">
-        <mesh
-          position={[HALF_W + WALL_THICKNESS / 2, WALL_HEIGHT / 2, 0]}
-          visible={false}
-        >
+        <mesh position={[HALF_W + 3, WALL_HEIGHT / 2, 0]} visible={false}>
           <boxGeometry args={[WALL_THICKNESS, WALL_HEIGHT, FIELD_LENGTH + 10]} />
         </mesh>
       </RigidBody>

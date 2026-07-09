@@ -2,7 +2,9 @@ import * as THREE from 'three'
 import type { InputState } from './inputSystem'
 import {
   ballPosition,
+  dribbleState,
   isClosestTeammateToBall,
+  playerRegistry,
   type PlayerRecord,
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
@@ -58,6 +60,35 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
 
   if (rec.isGoalkeeper) {
     return goalkeeperInput(rec, ball, input)
+  }
+
+  // Who has the ball right now?
+  const possessor = dribbleState.possessorId
+    ? playerRegistry.get(dribbleState.possessorId)
+    : null
+
+  // I am carrying: dribble toward the goal I attack, drifting with the jitter
+  // so runs curve naturally instead of tracking a laser line.
+  if (possessor?.id === rec.id) {
+    const attackZ =
+      rec.team === 'home' ? -FIELD_DIMENSIONS.length / 2 : FIELD_DIMENSIONS.length / 2
+    _target.set(ai.jitterX * 1.5, 0, attackZ)
+    input.sprinting = true
+    steerToward(rec, _target, input)
+    return input
+  }
+
+  // A teammate is carrying: never crowd them. Hold shape, pushed toward the
+  // attacking end to offer a passing option.
+  if (possessor && possessor.team === rec.team) {
+    const attackDir = rec.team === 'home' ? -1 : 1
+    _target.set(
+      rec.spawn[0] + (ball.x - rec.spawn[0]) * 0.1 + ai.jitterX,
+      0,
+      rec.spawn[2] + (ball.z - rec.spawn[2]) * 0.4 + attackDir * 4 + ai.jitterZ,
+    )
+    steerToward(rec, _target, input)
+    return input
   }
 
   const closest = isClosestTeammateToBall(rec.id)

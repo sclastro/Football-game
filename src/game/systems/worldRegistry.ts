@@ -73,23 +73,6 @@ export function ballPosition(out = new THREE.Vector3()): THREE.Vector3 | null {
   return out.set(t.x, t.y, t.z)
 }
 
-/** Nearest outfield player of a team to the ball (for control switching). */
-export function nearestOutfieldToBall(team: TeamSide): PlayerRecord | null {
-  const ball = ballPosition()
-  if (!ball) return null
-  let best: PlayerRecord | null = null
-  let bestDist = Infinity
-  for (const rec of playerRegistry.values()) {
-    if (rec.team !== team || rec.isGoalkeeper) continue
-    const d = rec.position.distanceToSquared(ball)
-    if (d < bestDist) {
-      bestDist = d
-      best = rec
-    }
-  }
-  return best
-}
-
 const _scratch = new THREE.Vector3()
 
 /** Is this player the closest member of their team to the ball? */
