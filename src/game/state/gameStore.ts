@@ -22,6 +22,8 @@ interface GameActions {
   scoreGoal: (side: "home" | "away") => void;
   /** After the goal stoppage: teleport everyone to kickoff spots and resume. */
   restartAfterGoal: () => void;
+  /** Ball went out of play: reset ball to centre + everyone to kickoff spots. */
+  kickoffReset: () => void;
   setControlledPlayer: (id: string) => void;
   setControlMode: (mode: ControlMode) => void;
   /** Start a match: pick a random opponent, set length, go to the pitch. */
@@ -83,6 +85,8 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
 
   restartAfterGoal: () =>
     set((s) => ({ resetNonce: s.resetNonce + 1, phase: "live" })),
+
+  kickoffReset: () => set((s) => ({ resetNonce: s.resetNonce + 1 })),
 
   setControlledPlayer: (id) => set({ controlledPlayerId: id }),
 

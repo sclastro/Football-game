@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { virtualInput, resetVirtualInput } from "@/game/systems/virtualInput";
 
-const STICK_RADIUS = 70; // px
+const STICK_RADIUS = 70; // px — movement stick
 const DEAD_ZONE = 0.14;
 const EXPO = 1.35; // >1 = finer control near the centre
 const SPRINT_AT = 0.92; // full extension sprints
+
+const SHOOT_RADIUS = 62; // px — shoot/aim stick
+const SHOOT_DEAD = 0.12; // below this a release is a tap (facing kick)
 
 interface StickState {
   baseX: number;
@@ -16,11 +19,12 @@ interface StickState {
 
 /**
  * Touch controls tuned for phones:
- * - DYNAMIC joystick: touch anywhere on the left half and the stick appears
- *   under your thumb (no reaching for a fixed corner).
- * - Dead zone + expo response curve for fine close control; pushing to full
- *   extension sprints (the ring lights up).
- * - Big Pass / Shoot buttons with pressed feedback on the right.
+ * - LEFT: dynamic movement joystick — touch anywhere on the left half and the
+ *   stick appears under your thumb; dead zone + expo for fine control; push to
+ *   full extension to sprint (the ring lights up).
+ * - RIGHT: a single SHOOT stick — drag it in a direction to aim, release to
+ *   kick. A small drag is a short pass, a big drag is a shot: one control does
+ *   both (no separate pass/shoot buttons).
  */
 export function TouchControls() {
   const [stick, setStick] = useState<StickState | null>(null);
@@ -69,7 +73,7 @@ export function TouchControls() {
 
   return (
     <>
-      {/* Left half: dynamic joystick zone */}
+      {/* Left half: dynamic movement joystick */}
       <div
         className="pointer-events-auto absolute inset-y-0 left-0 w-1/2 touch-none select-none"
         onPointerDown={(e) => {
@@ -126,70 +130,116 @@ export function TouchControls() {
         )}
       </div>
 
-      {/* Action buttons (right) */}
-      <div
-        className="pointer-events-auto absolute bottom-8 right-5 flex touch-none select-none flex-col items-end gap-4"
-        style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
-      >
-        <ActionButton
-          label="SHOOT"
-          size={92}
-          color="bg-red-500/85"
-          onDown={() => (virtualInput.shootHeld = true)}
-          onUp={() => (virtualInput.shootHeld = false)}
-        />
-        <ActionButton
-          label="PASS"
-          size={74}
-          color="bg-sky-500/85"
-          onDown={() => (virtualInput.passRequested = true)}
-        />
-      </div>
+      {/* Right: single SHOOT / aim stick */}
+      <ShootStick />
     </>
   );
 }
 
-function ActionButton({
-  label,
-  size,
-  color,
-  onDown,
-  onUp,
-}: {
-  label: string;
-  size: number;
-  color: string;
-  onDown: () => void;
-  onUp?: () => void;
-}) {
-  const [pressed, setPressed] = useState(false);
+/**
+ * Fixed-base aim stick. Drag from the pad to aim, release to kick. The drag
+ * length sets the power (short = pass, long = shot) and the drag direction sets
+ * where the ball goes, so you can shoot to the right while running left.
+ */
+function ShootStick() {
+  const pid = useRef<number | null>(null);
+  const center = useRef({ x: 0, y: 0 });
+  const [knob, setKnob] =
+    useState<{ dx: number; dy: number; mag: number } | null>(null);
+
+  const update = (x: number, y: number) => {
+    let dx = x - center.current.x;
+    let dy = y - center.current.y;
+    const dist = Math.hypot(dx, dy);
+    if (dist > SHOOT_RADIUS) {
+      dx = (dx / dist) * SHOOT_RADIUS;
+      dy = (dy / dist) * SHOOT_RADIUS;
+    }
+    const mag = Math.min(1, dist / SHOOT_RADIUS);
+    setKnob({ dx, dy, mag });
+    const nd = Math.hypot(dx, dy) || 1;
+    virtualInput.shootHeld = true;
+    virtualInput.shootAimX = (dx / nd) * mag;
+    virtualInput.shootAimY = (dy / nd) * mag;
+  };
+
+  const end = (k: { dx: number; dy: number; mag: number } | null) => {
+    const mag = k ? k.mag : 0;
+    if (k && mag > SHOOT_DEAD) {
+      const nd = Math.hypot(k.dx, k.dy) || 1;
+      virtualInput.fireAimX = k.dx / nd;
+      virtualInput.fireAimY = k.dy / nd;
+    } else {
+      virtualInput.fireAimX = 0;
+      virtualInput.fireAimY = 0;
+    }
+    virtualInput.firePower = mag;
+    virtualInput.shootFired = true;
+    virtualInput.shootHeld = false;
+    virtualInput.shootAimX = 0;
+    virtualInput.shootAimY = 0;
+    setKnob(null);
+    pid.current = null;
+  };
+
+  const power = knob ? knob.mag : 0;
+  const shooting = power > 0.55; // red once it's a real strike
+
   return (
-    <button
-      className={`rounded-full font-black text-white shadow-xl ring-2 backdrop-blur-sm transition-transform ${color} ${
-        pressed ? "scale-90 ring-white/80 brightness-125" : "ring-white/30"
-      }`}
-      style={{ width: size, height: size, fontSize: size * 0.2 }}
+    <div
+      className="pointer-events-auto absolute touch-none select-none rounded-full"
+      style={{
+        right: "2rem",
+        bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
+        width: SHOOT_RADIUS * 2,
+        height: SHOOT_RADIUS * 2,
+      }}
       onPointerDown={(e) => {
-        e.preventDefault();
-        setPressed(true);
-        onDown();
+        if (pid.current !== null) return;
+        pid.current = e.pointerId;
+        const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+        center.current = { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+        (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+        update(e.clientX, e.clientY);
       }}
-      onPointerUp={() => {
-        setPressed(false);
-        onUp?.();
+      onPointerMove={(e) => {
+        if (pid.current === e.pointerId) update(e.clientX, e.clientY);
       }}
-      onPointerCancel={() => {
-        setPressed(false);
-        onUp?.();
+      onPointerUp={(e) => {
+        if (pid.current === e.pointerId) end(knob);
       }}
-      onPointerLeave={() => {
-        if (pressed) {
-          setPressed(false);
-          onUp?.();
-        }
+      onPointerCancel={(e) => {
+        if (pid.current === e.pointerId) end(knob);
       }}
     >
-      {label}
-    </button>
+      {/* Base ring — tints from blue (pass) to red (shot) with power */}
+      <div
+        className={`absolute inset-0 rounded-full backdrop-blur-sm transition-colors ${
+          shooting
+            ? "bg-red-500/30 ring-2 ring-red-400/80"
+            : power > 0
+              ? "bg-sky-500/25 ring-2 ring-sky-300/70"
+              : "bg-red-500/25 ring-2 ring-white/40"
+        }`}
+      />
+      {/* Label / knob */}
+      {knob ? (
+        <div
+          className="absolute rounded-full bg-white/85 shadow-lg"
+          style={{
+            width: SHOOT_RADIUS * 0.72,
+            height: SHOOT_RADIUS * 0.72,
+            left: SHOOT_RADIUS * 0.64 + knob.dx,
+            top: SHOOT_RADIUS * 0.64 + knob.dy,
+          }}
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-sm font-black tracking-wide text-white drop-shadow">
+            SHOOT
+          </span>
+        </div>
+      )}
+    </div>
   );
 }

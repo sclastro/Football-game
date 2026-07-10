@@ -69,7 +69,12 @@ export function tryShoot(
   const charge = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
   const power = THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, charge);
 
-  facingVector(yaw, _dir);
+  // Touch stick can aim the shot; otherwise fire along the player's facing.
+  if (input.hasShootAim && (input.shootAimX !== 0 || input.shootAimZ !== 0)) {
+    _dir.set(input.shootAimX, 0, input.shootAimZ).normalize();
+  } else {
+    facingVector(yaw, _dir);
+  }
   _impulse.copy(_dir).multiplyScalar(power);
   // Ground shot: keep the ball down so it's controllable (no lofted shots).
   _impulse.y = 0;

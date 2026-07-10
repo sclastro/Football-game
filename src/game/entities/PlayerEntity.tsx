@@ -9,7 +9,6 @@ import { numberTexture } from "@/game/utils/textures";
 import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
-import { useCameraSystem } from "@/game/systems/cameraSystem";
 import {
   tryShoot,
   tryPass,
@@ -94,7 +93,6 @@ export function PlayerEntity({
   const readInput = useInputSystem();
   const { update: updateController, yaw, reset: resetController } =
     usePlayerCharacterController(rigidBodyRef);
-  const updateCamera = useCameraSystem();
 
   const animPhase = useRef(0);
   const kickTimer = useRef(0);
@@ -109,6 +107,9 @@ export function PlayerEntity({
       shootCharge: 0,
       shootReleased: false,
       passPressed: false,
+      hasShootAim: false,
+      shootAimX: 0,
+      shootAimZ: 0,
     }),
     [],
   );
@@ -295,10 +296,6 @@ export function PlayerEntity({
       if (leftLegRef.current) leftLegRef.current.rotation.set(0, 0, 0);
       if (rightLegRef.current) rightLegRef.current.rotation.set(0, 0, 0);
     }
-
-    if (controlled && group) {
-      updateCamera(delta, group.position);
-    }
   });
 
   const shirtColor = isGoalkeeper ? gkColor : color;
@@ -324,7 +321,7 @@ export function PlayerEntity({
         <CapsuleCollider args={[capsuleHalfHeight, capsuleRadius]} />
       </RigidBody>
 
-      <group ref={modelGroupRef}>
+      <group ref={modelGroupRef} position={spawnPosition}>
         <group ref={leanRef} position={[0, MODEL_Y_OFFSET, 0]}>
           {/* Shorts */}
           <RoundedBox castShadow args={[0.52, 0.22, 0.32]} radius={0.05} smoothness={2} position={[0, 0.08, 0]}>

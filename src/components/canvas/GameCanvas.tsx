@@ -10,6 +10,7 @@ import { PlayerEntity } from "@/game/entities/PlayerEntity";
 import { Benches } from "@/game/entities/Bench";
 import { MatchClock } from "@/game/systems/matchClockSystem";
 import { PossessionController } from "@/game/systems/possessionSystem";
+import { CameraRig } from "@/game/systems/cameraSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
 import { TEAMS, ROSTERS } from "@/game/data/teams";
 import { useGameStore } from "@/game/state/gameStore";
@@ -51,6 +52,7 @@ export function GameCanvas() {
       {/* Cool fill from the far side to soften shadows */}
       <directionalLight position={[-30, 24, -18]} intensity={0.35} color="#bcd4ff" />
 
+      <CameraRig />
       <Stadium />
       <PitchDressing />
       <Benches homeColor={home.kitColor} awayColor={away.kitColor} />

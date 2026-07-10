@@ -90,7 +90,7 @@ export function StartMenu() {
           <p className="mt-2 text-center text-xs text-emerald-200/70">
             {controlMode === "keyboard"
               ? "WASD move · Shift sprint · E pass · hold Space to shoot"
-              : "On-screen stick + Pass / Shoot buttons (best on mobile)"}
+              : "Left stick moves · drag the SHOOT stick to aim & kick (best on mobile)"}
           </p>
         </Section>
 

@@ -11,12 +11,6 @@ const LINE_Z = FIELD_DIMENSIONS.length / 2;
 const HALF_GOAL_W = GOAL_DIMENSIONS.width / 2;
 const GOAL_H = GOAL_DIMENSIONS.height;
 const BALL_R = PHYSICS_CONFIG.ball.radius;
-/** How far inside the line the ball is placed for a quick restart. */
-const RESTART_INSET = 1.2;
-
-function clamp(v: number, lo: number, hi: number) {
-  return Math.min(hi, Math.max(lo, v));
-}
 
 /**
  * Drives match flow from the render loop:
@@ -24,8 +18,8 @@ function clamp(v: number, lo: number, hi: number) {
  * - goal detection by ball position: only counts once the WHOLE ball has
  *   crossed the goal line between the posts, under the bar;
  * - real out-of-play: the moment the whole ball crosses a touchline or the
- *   goal line outside the goal, play restarts quickly from just inside the
- *   spot where it went out (simplified throw-in / goal kick);
+ *   goal line outside the goal, the ball returns to the centre spot and both
+ *   teams reset to formation (a fresh kickoff);
  * - resumes play after the GOAL! stoppage.
  */
 export function MatchClock() {
@@ -51,20 +45,12 @@ export function MatchClock() {
       }
 
       // Out of play: whole ball across a touchline, or across a goal line
-      // outside the goal mouth. Quick restart just inside where it went out.
+      // outside the goal mouth. Restart from the centre spot with both teams
+      // back in formation — a clean kickoff, just like after a goal.
       const overTouchline = Math.abs(t.x) > HALF_W + BALL_R;
       const overGoalLine = Math.abs(t.z) > LINE_Z + BALL_R && !withinGoalMouth;
       if (overTouchline || overGoalLine || t.y < -2) {
-        body.setTranslation(
-          {
-            x: clamp(t.x, -HALF_W + RESTART_INSET, HALF_W - RESTART_INSET),
-            y: BALL_R + 0.05,
-            z: clamp(t.z, -LINE_Z + RESTART_INSET, LINE_Z - RESTART_INSET),
-          },
-          true,
-        );
-        body.setLinvel({ x: 0, y: 0, z: 0 }, true);
-        body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+        state.kickoffReset();
         audio.whistle();
       }
     } else if (state.phase === "goalStoppage") {

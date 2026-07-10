@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { virtualInput } from "./virtualInput";
+import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
+
+const MAX_CHARGE_TIME = PHYSICS_CONFIG.ball.maxChargeTime;
 
 const MOVE_KEYS = {
   forward: ["KeyW", "ArrowUp"],
@@ -25,6 +28,11 @@ export interface InputState {
   shootReleased: boolean;
   /** True only on the single frame the pass key is pressed (edge trigger). */
   passPressed: boolean;
+  /** When true, shoot toward (shootAimX, shootAimZ) instead of the facing dir. */
+  hasShootAim: boolean;
+  /** World-space aim direction for the shot (touch stick drag). */
+  shootAimX: number;
+  shootAimZ: number;
 }
 
 /**
@@ -44,6 +52,9 @@ export function useInputSystem() {
     shootCharge: 0,
     shootReleased: false,
     passPressed: false,
+    hasShootAim: false,
+    shootAimX: 0,
+    shootAimZ: 0,
   });
 
   useEffect(() => {
@@ -80,9 +91,13 @@ export function useInputSystem() {
 
     state.sprinting = SPRINT_KEYS.some((k) => keys.has(k)) || virtualInput.sprint;
 
-    const shootHeld = SHOOT_KEYS.some((k) => keys.has(k)) || virtualInput.shootHeld;
+    // Keyboard shoot: hold Space to charge, release to fire along facing.
+    const shootHeld = SHOOT_KEYS.some((k) => keys.has(k));
     const now = performance.now();
     state.shootReleased = false;
+    state.hasShootAim = false;
+    state.shootAimX = 0;
+    state.shootAimZ = 0;
 
     if (shootHeld && !prevShootHeld.current) {
       shootPressedAt.current = now;
@@ -102,6 +117,22 @@ export function useInputSystem() {
     }
 
     prevShootHeld.current = shootHeld;
+
+    // Touch SHOOT stick: released this frame → fire with drag power + aim.
+    // Screen (right=+x, down=+y) maps to world (x = down, z = -right), matching
+    // the movement stick so a drag up shoots up the pitch, right shoots right.
+    if (virtualInput.shootFired) {
+      state.shootReleased = true;
+      state.shootCharge = virtualInput.firePower * MAX_CHARGE_TIME;
+      const ax = virtualInput.fireAimX;
+      const ay = virtualInput.fireAimY;
+      if (Math.hypot(ax, ay) > 0.05) {
+        state.hasShootAim = true;
+        state.shootAimX = ay;
+        state.shootAimZ = -ax;
+      }
+      virtualInput.shootFired = false;
+    }
 
     const passHeld = PASS_KEYS.some((k) => keys.has(k)) || virtualInput.passRequested;
     state.passPressed = passHeld && !prevPassHeld.current;
