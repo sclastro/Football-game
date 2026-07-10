@@ -71,6 +71,7 @@ export function GameCanvas() {
             team="home"
             isGoalkeeper={slot.isGoalkeeper}
             color={home.kitColor}
+            accentColor={home.accentColor}
             gkColor="#2e7d32"
             spawnPosition={homePosition(slot)}
           />
@@ -82,6 +83,7 @@ export function GameCanvas() {
             team="away"
             isGoalkeeper={slot.isGoalkeeper}
             color={away.kitColor}
+            accentColor={away.accentColor}
             gkColor="#f57f17"
             spawnPosition={awayPosition(slot)}
           />

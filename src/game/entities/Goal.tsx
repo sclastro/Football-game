@@ -26,26 +26,38 @@ export function Goal({ end, lineZ }: GoalProps) {
 
   return (
     <group>
-      {/* Posts */}
+      {/* Round posts + crossbar, like a real goal frame */}
       <RigidBody type="fixed" colliders="cuboid">
         <mesh castShadow position={[-GOAL_WIDTH / 2, GOAL_HEIGHT / 2, z]}>
-          <boxGeometry args={[POST_THICKNESS, GOAL_HEIGHT, POST_THICKNESS]} />
-          <meshStandardMaterial color="white" />
+          <cylinderGeometry
+            args={[POST_THICKNESS / 2, POST_THICKNESS / 2, GOAL_HEIGHT, 12]}
+          />
+          <meshStandardMaterial color="#fafafa" roughness={0.35} metalness={0.15} />
         </mesh>
       </RigidBody>
       <RigidBody type="fixed" colliders="cuboid">
         <mesh castShadow position={[GOAL_WIDTH / 2, GOAL_HEIGHT / 2, z]}>
-          <boxGeometry args={[POST_THICKNESS, GOAL_HEIGHT, POST_THICKNESS]} />
-          <meshStandardMaterial color="white" />
+          <cylinderGeometry
+            args={[POST_THICKNESS / 2, POST_THICKNESS / 2, GOAL_HEIGHT, 12]}
+          />
+          <meshStandardMaterial color="#fafafa" roughness={0.35} metalness={0.15} />
         </mesh>
       </RigidBody>
-      {/* Crossbar */}
       <RigidBody type="fixed" colliders="cuboid">
-        <mesh castShadow position={[0, GOAL_HEIGHT, z]}>
-          <boxGeometry
-            args={[GOAL_WIDTH + POST_THICKNESS, POST_THICKNESS, POST_THICKNESS]}
+        <mesh
+          castShadow
+          position={[0, GOAL_HEIGHT, z]}
+          rotation={[0, 0, Math.PI / 2]}
+        >
+          <cylinderGeometry
+            args={[
+              POST_THICKNESS / 2,
+              POST_THICKNESS / 2,
+              GOAL_WIDTH + POST_THICKNESS,
+              12,
+            ]}
           />
-          <meshStandardMaterial color="white" />
+          <meshStandardMaterial color="#fafafa" roughness={0.35} metalness={0.15} />
         </mesh>
       </RigidBody>
 

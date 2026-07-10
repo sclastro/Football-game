@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { CapsuleCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
-import { Billboard } from "@react-three/drei";
+import { Billboard, RoundedBox } from "@react-three/drei";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { PLAYER_INFO } from "@/game/data/teams";
 import { numberTexture } from "@/game/utils/textures";
@@ -64,6 +64,8 @@ interface PlayerEntityProps {
   team: TeamSide;
   isGoalkeeper?: boolean;
   color: string;
+  /** Trim colour for collar/cuffs (team accent). */
+  accentColor?: string;
   /** GK shirts use this instead of the outfield kit colour. */
   gkColor?: string;
   spawnPosition: [number, number, number];
@@ -75,6 +77,7 @@ export function PlayerEntity({
   team,
   isGoalkeeper = false,
   color,
+  accentColor = "#ffffff",
   gkColor = "#37474f",
   spawnPosition,
 }: PlayerEntityProps) {
@@ -324,17 +327,19 @@ export function PlayerEntity({
       <group ref={modelGroupRef}>
         <group ref={leanRef} position={[0, MODEL_Y_OFFSET, 0]}>
           {/* Shorts */}
-          <mesh castShadow position={[0, 0.08, 0]}>
-            <boxGeometry args={[0.52, 0.22, 0.32]} />
-            <meshStandardMaterial color={shortsColor} />
-          </mesh>
+          <RoundedBox castShadow args={[0.52, 0.22, 0.32]} radius={0.05} smoothness={2} position={[0, 0.08, 0]}>
+            <meshStandardMaterial color={shortsColor} roughness={0.8} />
+          </RoundedBox>
           {/* Torso */}
-          <mesh castShadow position={[0, 0.42, 0]}>
-            <boxGeometry args={[0.5, 0.56, 0.3]} />
-            <meshStandardMaterial color={shirtColor} />
-          </mesh>
+          <RoundedBox castShadow args={[0.5, 0.56, 0.3]} radius={0.07} smoothness={2} position={[0, 0.42, 0]}>
+            <meshStandardMaterial color={shirtColor} roughness={0.75} />
+          </RoundedBox>
+          {/* Collar trim in the team accent colour */}
+          <RoundedBox args={[0.46, 0.06, 0.27]} radius={0.03} smoothness={2} position={[0, 0.68, 0]}>
+            <meshStandardMaterial color={accentColor} roughness={0.7} />
+          </RoundedBox>
           {/* Number on the shirt back (+Z is the back; player faces -Z) */}
-          <mesh position={[0, 0.46, 0.161]}>
+          <mesh position={[0, 0.46, 0.165]}>
             <planeGeometry args={[0.3, 0.3]} />
             <meshBasicMaterial map={numberTex} transparent />
           </mesh>
@@ -343,65 +348,67 @@ export function PlayerEntity({
             <boxGeometry args={[0.16, 0.1, 0.16]} />
             <meshStandardMaterial color={skinTone} />
           </mesh>
-          <mesh castShadow position={[0, 0.9, 0]}>
-            <boxGeometry args={[0.3, 0.3, 0.3]} />
-            <meshStandardMaterial color={skinTone} />
-          </mesh>
+          <RoundedBox castShadow args={[0.3, 0.3, 0.3]} radius={0.06} smoothness={2} position={[0, 0.9, 0]}>
+            <meshStandardMaterial color={skinTone} roughness={0.6} />
+          </RoundedBox>
           {/* Hair cap */}
-          <mesh castShadow position={[0, 1.02, -0.02]}>
-            <boxGeometry args={[0.32, 0.12, 0.33]} />
-            <meshStandardMaterial color={hairColor} />
-          </mesh>
+          <RoundedBox castShadow args={[0.32, 0.13, 0.33]} radius={0.05} smoothness={2} position={[0, 1.02, -0.02]}>
+            <meshStandardMaterial color={hairColor} roughness={0.9} />
+          </RoundedBox>
           {/* Eyes (front face = -Z) */}
-          <mesh position={[-0.07, 0.92, -0.151]}>
+          <mesh position={[-0.07, 0.92, -0.152]}>
             <boxGeometry args={[0.05, 0.05, 0.02]} />
             <meshBasicMaterial color="#20140c" />
           </mesh>
-          <mesh position={[0.07, 0.92, -0.151]}>
+          <mesh position={[0.07, 0.92, -0.152]}>
             <boxGeometry args={[0.05, 0.05, 0.02]} />
             <meshBasicMaterial color="#20140c" />
           </mesh>
-          {/* Legs: thigh (skin/short) + sock */}
+          {/* Legs: thigh (skin) + sock + boot */}
           <group ref={leftLegRef} position={[-0.13, 0.0, 0]}>
-            <mesh castShadow position={[0, -0.18, 0]}>
-              <boxGeometry args={[0.17, 0.28, 0.17]} />
-              <meshStandardMaterial color={skinTone} />
-            </mesh>
-            <mesh castShadow position={[0, -0.42, 0]}>
-              <boxGeometry args={[0.17, 0.24, 0.18]} />
-              <meshStandardMaterial color={sockColor} />
-            </mesh>
+            <RoundedBox castShadow args={[0.17, 0.28, 0.17]} radius={0.04} smoothness={2} position={[0, -0.18, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.6} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.17, 0.2, 0.18]} radius={0.04} smoothness={2} position={[0, -0.4, 0]}>
+              <meshStandardMaterial color={sockColor} roughness={0.8} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.18, 0.09, 0.24]} radius={0.03} smoothness={2} position={[0, -0.5, -0.03]}>
+              <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.1} />
+            </RoundedBox>
           </group>
           <group ref={rightLegRef} position={[0.13, 0.0, 0]}>
-            <mesh castShadow position={[0, -0.18, 0]}>
-              <boxGeometry args={[0.17, 0.28, 0.17]} />
-              <meshStandardMaterial color={skinTone} />
-            </mesh>
-            <mesh castShadow position={[0, -0.42, 0]}>
-              <boxGeometry args={[0.17, 0.24, 0.18]} />
-              <meshStandardMaterial color={sockColor} />
-            </mesh>
+            <RoundedBox castShadow args={[0.17, 0.28, 0.17]} radius={0.04} smoothness={2} position={[0, -0.18, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.6} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.17, 0.2, 0.18]} radius={0.04} smoothness={2} position={[0, -0.4, 0]}>
+              <meshStandardMaterial color={sockColor} roughness={0.8} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.18, 0.09, 0.24]} radius={0.03} smoothness={2} position={[0, -0.5, -0.03]}>
+              <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.1} />
+            </RoundedBox>
           </group>
-          {/* Arms: short sleeve (shirt) + forearm (skin) */}
+          {/* Arms: sleeve (shirt + accent cuff) + forearm (skin) */}
           <group ref={leftArmRef} position={[-0.34, 0.62, 0]}>
-            <mesh castShadow position={[0, -0.12, 0]}>
-              <boxGeometry args={[0.15, 0.24, 0.16]} />
-              <meshStandardMaterial color={shirtColor} />
-            </mesh>
-            <mesh castShadow position={[0, -0.34, 0]}>
-              <boxGeometry args={[0.13, 0.22, 0.14]} />
-              <meshStandardMaterial color={skinTone} />
-            </mesh>
+            <RoundedBox castShadow args={[0.15, 0.24, 0.16]} radius={0.04} smoothness={2} position={[0, -0.12, 0]}>
+              <meshStandardMaterial color={shirtColor} roughness={0.75} />
+            </RoundedBox>
+            <RoundedBox args={[0.155, 0.05, 0.165]} radius={0.02} smoothness={2} position={[0, -0.235, 0]}>
+              <meshStandardMaterial color={accentColor} roughness={0.7} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.13, 0.22, 0.14]} radius={0.04} smoothness={2} position={[0, -0.36, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.6} />
+            </RoundedBox>
           </group>
           <group ref={rightArmRef} position={[0.34, 0.62, 0]}>
-            <mesh castShadow position={[0, -0.12, 0]}>
-              <boxGeometry args={[0.15, 0.24, 0.16]} />
-              <meshStandardMaterial color={shirtColor} />
-            </mesh>
-            <mesh castShadow position={[0, -0.34, 0]}>
-              <boxGeometry args={[0.13, 0.22, 0.14]} />
-              <meshStandardMaterial color={skinTone} />
-            </mesh>
+            <RoundedBox castShadow args={[0.15, 0.24, 0.16]} radius={0.04} smoothness={2} position={[0, -0.12, 0]}>
+              <meshStandardMaterial color={shirtColor} roughness={0.75} />
+            </RoundedBox>
+            <RoundedBox args={[0.155, 0.05, 0.165]} radius={0.02} smoothness={2} position={[0, -0.235, 0]}>
+              <meshStandardMaterial color={accentColor} roughness={0.7} />
+            </RoundedBox>
+            <RoundedBox castShadow args={[0.13, 0.22, 0.14]} radius={0.04} smoothness={2} position={[0, -0.36, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.6} />
+            </RoundedBox>
           </group>
           {/* Controlled-player marker: glowing ring at the feet */}
           {controlled && (

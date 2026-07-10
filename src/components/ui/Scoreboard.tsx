@@ -25,7 +25,7 @@ export function Scoreboard() {
         {/* Colour accent bars either side */}
         <div className="w-1.5" style={{ backgroundColor: home.kitColor }} />
         <TeamCell color={home.kitColor} flag={home.flag} short={home.short} />
-        <div className="flex flex-col items-center justify-center bg-neutral-950/95 px-3 py-1">
+        <div className="flex flex-col items-center justify-center bg-neutral-950/80 px-3 py-1 backdrop-blur-md">
           <div className="text-[26px] font-black leading-none tracking-wide tabular-nums text-white">
             {score.home}<span className="mx-1 text-neutral-600">:</span>{score.away}
           </div>
@@ -34,7 +34,7 @@ export function Scoreboard() {
         <div className="w-1.5" style={{ backgroundColor: away.kitColor }} />
       </div>
       {/* Timer pill under the score */}
-      <div className="mx-auto -mt-0.5 w-fit rounded-b-md bg-neutral-950/95 px-3 pb-0.5 pt-1">
+      <div className="mx-auto -mt-0.5 w-fit rounded-b-md bg-neutral-950/80 px-3 pb-0.5 pt-1 backdrop-blur-md">
         <span
           className={`text-xs font-bold tabular-nums tracking-widest ${
             phase === "fulltime" ? "text-red-400" : "text-emerald-400"
@@ -57,7 +57,7 @@ function TeamCell({
   short: string;
 }) {
   return (
-    <div className="flex items-center gap-2 bg-neutral-900/95 px-3 py-1.5 text-white">
+    <div className="flex items-center gap-2 bg-neutral-900/80 px-3 py-1.5 text-white backdrop-blur-md">
       <span className="text-xl leading-none">{flag}</span>
       <span className="text-lg font-extrabold tracking-wide">{short}</span>
       <span
