@@ -15,6 +15,8 @@ export const virtualInput = {
   /** Live screen-space aim while dragging (right/down positive), for the UI. */
   shootAimX: 0,
   shootAimY: 0,
+  /** Live 0..1 drag length while aiming, used to draw the in-world preview. */
+  shootPower: 0,
   /** One-shot: the shoot stick was released this frame. */
   shootFired: false,
   /** Power 0..1 from the drag distance at release. */
@@ -33,6 +35,7 @@ export function resetVirtualInput() {
   virtualInput.shootHeld = false;
   virtualInput.shootAimX = 0;
   virtualInput.shootAimY = 0;
+  virtualInput.shootPower = 0;
   virtualInput.shootFired = false;
   virtualInput.firePower = 0;
   virtualInput.fireAimX = 0;

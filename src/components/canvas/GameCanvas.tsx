@@ -12,7 +12,7 @@ import { MatchClock } from "@/game/systems/matchClockSystem";
 import { PossessionController } from "@/game/systems/possessionSystem";
 import { CameraRig } from "@/game/systems/cameraSystem";
 import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
-import { TEAMS, ROSTERS } from "@/game/data/teams";
+import { TEAMS } from "@/game/data/teams";
 import { useGameStore } from "@/game/state/gameStore";
 
 const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2;
@@ -20,9 +20,10 @@ const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2;
 export function GameCanvas() {
   const home = TEAMS[useGameStore((s) => s.homeTeamId)];
   const away = TEAMS[useGameStore((s) => s.awayTeamId)];
-  // Entities are keyed by roster player id, so a substitution unmounts the
+  // Entities are keyed by roster player id, so changing the squad unmounts the
   // outgoing player and mounts the incoming one at the slot's spawn point.
-  const homeStarters = useGameStore((s) => s.homeStarters);
+  const homeSquad = useGameStore((s) => s.homeSquad);
+  const awaySquad = useGameStore((s) => s.awaySquad);
 
   return (
     <Canvas
@@ -66,30 +67,34 @@ export function GameCanvas() {
         <Goal end={-1} lineZ={GOAL_LINE_Z} />
         <Goal end={1} lineZ={GOAL_LINE_Z} />
 
-        {FORMATION.map((slot, i) => (
-          <PlayerEntity
-            key={homeStarters[i]}
-            id={homeStarters[i]}
-            team="home"
-            isGoalkeeper={slot.isGoalkeeper}
-            color={home.kitColor}
-            accentColor={home.accentColor}
-            gkColor="#2e7d32"
-            spawnPosition={homePosition(slot)}
-          />
-        ))}
-        {FORMATION.map((slot, i) => (
-          <PlayerEntity
-            key={ROSTERS.away.starters[i].id}
-            id={ROSTERS.away.starters[i].id}
-            team="away"
-            isGoalkeeper={slot.isGoalkeeper}
-            color={away.kitColor}
-            accentColor={away.accentColor}
-            gkColor="#f57f17"
-            spawnPosition={awayPosition(slot)}
-          />
-        ))}
+        {FORMATION.map((slot, i) =>
+          homeSquad[i] ? (
+            <PlayerEntity
+              key={homeSquad[i]}
+              id={homeSquad[i]}
+              team="home"
+              isGoalkeeper={slot.isGoalkeeper}
+              color={home.kitColor}
+              accentColor={home.accentColor}
+              gkColor="#2e7d32"
+              spawnPosition={homePosition(slot)}
+            />
+          ) : null,
+        )}
+        {FORMATION.map((slot, i) =>
+          awaySquad[i] ? (
+            <PlayerEntity
+              key={awaySquad[i]}
+              id={awaySquad[i]}
+              team="away"
+              isGoalkeeper={slot.isGoalkeeper}
+              color={away.kitColor}
+              accentColor={away.accentColor}
+              gkColor="#f57f17"
+              spawnPosition={awayPosition(slot)}
+            />
+          ) : null,
+        )}
       </Physics>
     </Canvas>
   );

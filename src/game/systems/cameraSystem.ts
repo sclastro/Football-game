@@ -3,25 +3,26 @@ import * as THREE from "three";
 import { useThree, useFrame } from "@react-three/fiber";
 import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
 import { playerRegistry, ballPosition } from "./worldRegistry";
+import { registerPicker } from "./playerPicking";
 
 // Broadcast side camera: sits high on one long touchline (+X) and looks ACROSS
 // the pitch toward -X, so both goals and the far stand are in view. It pans
 // gently along the pitch length (Z) with the controlled player but never
 // rotates, so the whole match stays legible. On a goal it dollies in on the
 // scorer for a celebration beat, then pulls back out when play resumes.
-const SIDE_X = 34; // distance out along +X (near stand is removed, so view is clear)
-const HEIGHT = 17;
+const SIDE_X = 42; // distance out along +X (near stand is removed, so view is clear)
+const HEIGHT = 21;
 const FOLLOW_Z = 0.5; // how much the camera tracks the player along the pitch
-const LOOK_X = -3; // aim slightly past the centre toward the far side
+const LOOK_X = -4; // aim slightly past the centre toward the far side
 const LOOK_HEIGHT = 1.5;
 const POS_SMOOTH = 3.5;
 const LOOK_SMOOTH = 5;
 
 // Goal-celebration dolly: quickly push in low and close on the scorer.
-const CELEB_SIDE_FROM = 24;
-const CELEB_SIDE_TO = 14;
-const CELEB_HEIGHT_FROM = 12;
-const CELEB_HEIGHT_TO = 6.5;
+const CELEB_SIDE_FROM = 30;
+const CELEB_SIDE_TO = 16;
+const CELEB_HEIGHT_FROM = 14;
+const CELEB_HEIGHT_TO = 7;
 const CELEB_SMOOTH = 6;
 
 // Camera smoothing state is module-level: a single rig drives the one shared
@@ -49,7 +50,14 @@ function focusPoint(out: THREE.Vector3): THREE.Vector3 {
  * camera staring at the origin) and drives it every frame thereafter.
  */
 export function CameraRig() {
-  const { camera } = useThree();
+  const { camera, gl } = useThree();
+
+  // The HTML control overlay sits above the canvas and swallows pointer events,
+  // so player tapping is done by projecting players to screen space instead of
+  // raycasting. That needs the live camera and canvas.
+  useLayoutEffect(() => {
+    registerPicker(camera, gl.domElement);
+  }, [camera, gl]);
 
   useLayoutEffect(() => {
     focusPoint(_target);

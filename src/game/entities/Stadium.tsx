@@ -4,11 +4,13 @@ import { FIELD_DIMENSIONS } from "./Field";
 
 const { width, length } = FIELD_DIMENSIONS;
 
+// The pitch is large, so the crowd is spaced out and the rake shortened to keep
+// the total instance count near what it was on the old, smaller pitch.
 const MARGIN = 3.5; // gap between touchline and stand front
-const ROWS = 11;
-const ROW_RISE = 0.7;
-const ROW_DEPTH = 0.85;
-const SPACING = 1.0;
+const ROWS = 8;
+const ROW_RISE = 0.8;
+const ROW_DEPTH = 1.0;
+const SPACING = 1.25;
 const FRONT_H = 1.2;
 
 const CROWD_PALETTE = [

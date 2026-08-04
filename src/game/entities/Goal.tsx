@@ -1,9 +1,9 @@
 import { RigidBody } from "@react-three/rapier";
 
-const GOAL_WIDTH = 7.4;
-const GOAL_HEIGHT = 2.6;
+const GOAL_WIDTH = 8.4;
+const GOAL_HEIGHT = 2.8;
 const POST_THICKNESS = 0.14;
-const GOAL_DEPTH = 1.5;
+const GOAL_DEPTH = 1.8;
 
 interface GoalProps {
   /** Which goal line this goal sits on: -1 = -Z goal, +1 = +Z goal. */

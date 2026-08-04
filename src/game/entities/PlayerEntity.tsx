@@ -4,7 +4,7 @@ import { useFrame } from "@react-three/fiber";
 import { CapsuleCollider, RigidBody, type RapierRigidBody } from "@react-three/rapier";
 import { Billboard, RoundedBox } from "@react-three/drei";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
-import { PLAYER_INFO } from "@/game/data/teams";
+import { PLAYER_INFO } from "@/game/data/rosters";
 import { numberTexture } from "@/game/utils/textures";
 import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
@@ -12,13 +12,17 @@ import { usePlayerCharacterController } from "@/game/systems/playerControllerSys
 import {
   tryShoot,
   tryPass,
+  tryPassTo,
   aiKick,
   choosePassReceiver,
 } from "@/game/systems/ballPossessionSystem";
+import { selectionState, clearSelection } from "@/game/systems/selectionSystem";
+import { isPlayingPhase } from "@/game/state/types";
 import { computeAiInput, makeAiState } from "@/game/systems/aiSystem";
 import { useGameStore } from "@/game/state/gameStore";
 import {
   ballApi,
+  clearPass,
   dribbleState,
   playerRegistry,
   type PlayerRecord,
@@ -84,6 +88,7 @@ export function PlayerEntity({
 
   const rigidBodyRef = useRef<RapierRigidBody>(null);
   const modelGroupRef = useRef<THREE.Group>(null);
+  const selectRingRef = useRef<THREE.Mesh>(null);
   const leanRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
@@ -162,6 +167,9 @@ export function PlayerEntity({
         true,
       );
       resetController(kickoffYaw);
+      // A restart voids any selection or pass that was in flight.
+      clearSelection();
+      clearPass();
     });
     return unsub;
     // Spawn/yaw are fixed per entity; subscribe once for its lifetime.
@@ -170,7 +178,20 @@ export function PlayerEntity({
 
   useFrame((_, delta) => {
     const phase = useGameStore.getState().phase;
-    const active = phase === "live";
+    const active = isPlayingPhase(phase);
+
+    // Selection ring: driven here rather than through React so that tapping a
+    // team-mate never re-renders the scene graph mid-match.
+    const ring = selectRingRef.current;
+    if (ring) {
+      const isSelected = selectionState.selectedId === id;
+      ring.visible = isSelected;
+      if (isSelected) {
+        ring.rotation.z += delta * 2.4;
+        const pulse = 0.75 + Math.sin(performance.now() / 160) * 0.25;
+        (ring.material as THREE.MeshBasicMaterial).opacity = pulse;
+      }
+    }
 
     let input: InputState;
     if (controlled && active) {
@@ -203,15 +224,23 @@ export function PlayerEntity({
     const ball = ballApi.body;
     if (ball && active) {
       if (controlled) {
-        if (tryShoot(ball, record.position, yaw.current, input)) {
+        if (tryShoot(ball, id, record.position, yaw.current, input)) {
           kickTimer.current = KICK_DURATION;
           audio.kick();
-        } else if (
-          input.passPressed &&
-          tryPass(ball, id, record.position, yaw.current)
-        ) {
-          kickTimer.current = KICK_DURATION;
-          audio.kick();
+        } else if (input.passPressed) {
+          // PASS always goes to the team-mate you singled out, if you picked
+          // one. With nobody selected it falls back to the best option in front.
+          const picked = selectionState.selectedId
+            ? playerRegistry.get(selectionState.selectedId)
+            : null;
+          const struck =
+            picked && picked.id !== id
+              ? tryPassTo(ball, id, record.position, picked, true)
+              : tryPass(ball, id, record.position, yaw.current, true);
+          if (struck) {
+            kickTimer.current = KICK_DURATION;
+            audio.pass();
+          }
         }
       } else {
         aiKickCooldown.current = Math.max(0, aiKickCooldown.current - delta);
@@ -233,14 +262,10 @@ export function PlayerEntity({
               kicked = aiKick(ball, record.position, opponentGoal, 8.5);
             } else if (Math.random() < 0.35) {
               const receiver = choosePassReceiver(id, record.position, yaw.current);
+              // byUser = false: an AI team-mate passing must never yank control
+              // away from the player you're driving.
               if (receiver) {
-                const d = record.position.distanceTo(receiver.position);
-                kicked = aiKick(
-                  ball,
-                  record.position,
-                  receiver.position,
-                  THREE.MathUtils.clamp(d * 0.5, 3, 8),
-                );
+                kicked = tryPassTo(ball, id, record.position, receiver, false);
               }
             }
           } else if (possessorRec && possessorRec.team !== team) {
@@ -407,13 +432,24 @@ export function PlayerEntity({
               <meshStandardMaterial color={skinTone} roughness={0.6} />
             </RoundedBox>
           </group>
-          {/* Controlled-player marker: glowing ring at the feet */}
+          {/* Controlled-player marker: solid yellow ring at the feet */}
           {controlled && (
             <mesh position={[0, LEG_BOTTOM + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
               <ringGeometry args={[0.42, 0.56, 28]} />
               <meshBasicMaterial color="#ffee58" transparent opacity={0.9} />
             </mesh>
           )}
+          {/* Selected team-mate marker: a cyan ring that spins and pulses.
+              Visibility is toggled in the frame loop, not by React. */}
+          <mesh
+            ref={selectRingRef}
+            visible={false}
+            position={[0, LEG_BOTTOM + 0.03, 0]}
+            rotation={[-Math.PI / 2, 0, 0]}
+          >
+            <ringGeometry args={[0.6, 0.82, 32, 1, 0, Math.PI * 1.5]} />
+            <meshBasicMaterial color="#22d3ee" transparent opacity={0.9} />
+          </mesh>
           {/* Floating number tag so players read clearly from the high camera */}
           <Billboard position={[0, 1.5, 0]}>
             <mesh>

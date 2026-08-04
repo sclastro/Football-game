@@ -1,58 +1,150 @@
 import { useState } from "react";
-import { useGameStore } from "@/game/state/gameStore";
+import { useGameStore, shootoutGoals } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
 import type { ControlMode } from "@/game/state/types";
 import { audio } from "@/game/systems/audio";
+
+/** A centred modal card, shared by every match overlay. */
+function Card({
+  kicker,
+  children,
+}: {
+  kicker: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-black/65 font-sans text-white backdrop-blur-sm">
+      <div className="w-[380px] max-w-[90vw] rounded-2xl bg-neutral-900 p-6 text-center ring-1 ring-white/10">
+        <div className="text-xs font-bold uppercase tracking-[0.3em] text-emerald-300">
+          {kicker}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Score line with both flags, used across the break/result cards. */
+function ScoreLine() {
+  const score = useGameStore((s) => s.score);
+  const home = TEAMS[useGameStore((s) => s.homeTeamId)];
+  const away = TEAMS[useGameStore((s) => s.awayTeamId)];
+  return (
+    <div className="my-3 flex items-center justify-center gap-3 text-3xl font-black tabular-nums">
+      <span>{home.flag}</span>
+      <span>
+        {score.home} - {score.away}
+      </span>
+      <span>{away.flag}</span>
+    </div>
+  );
+}
+
+/** "Level at the whistle — extra time" card, shown between the periods. */
+export function ExtraTimeOverlay() {
+  const phase = useGameStore((s) => s.phase);
+  const beginExtraTime = useGameStore((s) => s.beginExtraTime);
+  const duration = useGameStore((s) => s.matchDuration);
+  if (phase !== "extraTimeBreak") return null;
+
+  const added = duration === 120 ? 60 : duration === 300 ? 120 : 90;
+
+  return (
+    <Card kicker="Level at full time">
+      <div className="my-2 text-4xl font-black tracking-tight text-yellow-300">
+        EXTRA TIME
+      </div>
+      <ScoreLine />
+      <p className="mb-5 text-sm text-white/60">
+        {Math.round(added / 60) === added / 60
+          ? `${added / 60} more minute${added / 60 > 1 ? "s" : ""}`
+          : `${added} more seconds`}{" "}
+        to settle it.
+      </p>
+      <button
+        className="rounded-full bg-yellow-400 px-8 py-2.5 font-black text-emerald-950 hover:bg-yellow-300 active:scale-95"
+        onClick={beginExtraTime}
+      >
+        PLAY ON ▶
+      </button>
+    </Card>
+  );
+}
+
+/** "Still level — penalties" card, shown before the shootout begins. */
+export function ShootoutIntroOverlay() {
+  const phase = useGameStore((s) => s.phase);
+  const beginShootout = useGameStore((s) => s.beginShootout);
+  if (phase !== "shootoutIntro") return null;
+
+  return (
+    <Card kicker="Still level">
+      <div className="my-2 text-4xl font-black tracking-tight text-red-400">
+        PENALTIES
+      </div>
+      <ScoreLine />
+      <p className="mb-5 text-sm leading-relaxed text-white/60">
+        Five kicks each. You choose where to shoot — and which way to dive when
+        you're in goal.
+      </p>
+      <button
+        className="rounded-full bg-yellow-400 px-8 py-2.5 font-black text-emerald-950 hover:bg-yellow-300 active:scale-95"
+        onClick={beginShootout}
+      >
+        TO THE SPOT ▶
+      </button>
+    </Card>
+  );
+}
 
 /** Full-time result card with a way back to the menu / rematch. */
 export function FullTimeOverlay() {
   const phase = useGameStore((s) => s.phase);
   const score = useGameStore((s) => s.score);
+  const shootout = useGameStore((s) => s.shootout);
   const home = TEAMS[useGameStore((s) => s.homeTeamId)];
   const away = TEAMS[useGameStore((s) => s.awayTeamId)];
   const backToMenu = useGameStore((s) => s.backToMenu);
-  const startMatch = useGameStore((s) => s.startMatch);
-  const duration = useGameStore((s) => s.matchDuration);
+  const rematch = useGameStore((s) => s.rematch);
 
   if (phase !== "fulltime") return null;
 
-  const result =
-    score.home > score.away
-      ? `${home.name} win!`
-      : score.away > score.home
-        ? `${away.name} win!`
-        : "It's a draw";
+  const penHome = shootout ? shootoutGoals(shootout, "home") : 0;
+  const penAway = shootout ? shootoutGoals(shootout, "away") : 0;
+  const decidedOnPens = !!shootout && penHome !== penAway;
+
+  const homeWon = decidedOnPens ? penHome > penAway : score.home > score.away;
+  const awayWon = decidedOnPens ? penAway > penHome : score.away > score.home;
+  const result = homeWon
+    ? `${home.name} win!`
+    : awayWon
+      ? `${away.name} win!`
+      : "It's a draw";
 
   return (
-    <div className="pointer-events-auto absolute inset-0 flex items-center justify-center bg-black/60 font-sans text-white">
-      <div className="w-[360px] max-w-[90vw] rounded-2xl bg-neutral-900 p-6 text-center ring-1 ring-white/10">
-        <div className="text-xs uppercase tracking-widest text-emerald-300">
-          Full time
+    <Card kicker="Full time">
+      <ScoreLine />
+      {decidedOnPens && (
+        <div className="-mt-1 mb-2 text-sm font-bold text-yellow-300">
+          {penHome} - {penAway} on penalties
         </div>
-        <div className="my-3 flex items-center justify-center gap-3 text-3xl font-black tabular-nums">
-          <span>{home.flag}</span>
-          <span>
-            {score.home} - {score.away}
-          </span>
-          <span>{away.flag}</span>
-        </div>
-        <div className="mb-5 text-lg font-semibold">{result}</div>
-        <div className="flex justify-center gap-2">
-          <button
-            className="rounded-full bg-yellow-400 px-5 py-2 font-bold text-emerald-950 hover:bg-yellow-300"
-            onClick={() => startMatch(home.id, duration)}
-          >
-            Rematch
-          </button>
-          <button
-            className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/20"
-            onClick={backToMenu}
-          >
-            Menu
-          </button>
-        </div>
+      )}
+      <div className="mb-5 text-lg font-semibold">{result}</div>
+      <div className="flex justify-center gap-2">
+        <button
+          className="rounded-full bg-yellow-400 px-5 py-2 font-bold text-emerald-950 hover:bg-yellow-300 active:scale-95"
+          onClick={rematch}
+        >
+          Rematch
+        </button>
+        <button
+          className="rounded-full bg-white/10 px-5 py-2 font-semibold hover:bg-white/20 active:scale-95"
+          onClick={backToMenu}
+        >
+          Menu
+        </button>
       </div>
-    </div>
+    </Card>
   );
 }
 
@@ -88,7 +180,7 @@ export function SettingsMenu() {
                     : "bg-white/10 hover:bg-white/20"
                 }`}
               >
-                {m === "keyboard" ? "Keyboard" : "Joystick"}
+                {m === "keyboard" ? "Keyboard" : "Touch"}
               </button>
             ))}
           </div>

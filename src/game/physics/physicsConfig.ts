@@ -23,11 +23,17 @@ export const PHYSICS_CONFIG = {
     /** Distance from player centre within which a shot/kick connects. */
     kickRange: 1.3,
     /** Base impulse for a tapped shot; scales up to maxShotImpulse when charged. */
-    minShotImpulse: 4.5,
-    maxShotImpulse: 12,
+    minShotImpulse: 5,
+    maxShotImpulse: 16,
     /** Seconds of holding the shoot key to reach full power. */
     maxChargeTime: 0.8,
-    /** Seconds you must wait between passes. */
-    passCooldown: 0.75,
+    /** Seconds you must wait between kicks (per player). */
+    passCooldown: 0.6,
+    /**
+     * Shots below this 0..1 power stay flat on the deck — short strikes remain
+     * easy to control. Past it the arc ramps in quadratically up to maxLift.
+     */
+    loftThreshold: 0.45,
+    maxLiftImpulse: 4.5,
   },
 };

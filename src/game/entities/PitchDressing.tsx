@@ -1,9 +1,16 @@
 import { FIELD_DIMENSIONS } from "./Field";
+import { GOAL_DIMENSIONS } from "./Goal";
 
 const HALF_W = FIELD_DIMENSIONS.width / 2;
 const HALF_L = FIELD_DIMENSIONS.length / 2;
 const BOARD_OUT = 0.5; // distance outside the line
 const BOARD_H = 0.62;
+
+// Goal-line hoardings run from beside the goal out to the corner. Derived from
+// the real goal width so they always leave a correct gap around the posts.
+const GOAL_GAP = GOAL_DIMENSIONS.width / 2 + 1.5;
+const END_BOARD_LEN = Math.max(2, HALF_W - GOAL_GAP - 1.5);
+const END_BOARD_X = GOAL_GAP + END_BOARD_LEN / 2;
 
 /** A pitch-side advertising hoarding: dark base with a bright top strip. */
 function Board({
@@ -61,8 +68,8 @@ export function PitchDressing() {
         [-1, 1].map((side) => (
           <Board
             key={`${s}-${side}`}
-            position={[side * (HALF_W / 2 + 1.5), 0, s * (HALF_L + BOARD_OUT)]}
-            size={[HALF_W - 4, BOARD_H, 0.12]}
+            position={[side * END_BOARD_X, 0, s * (HALF_L + BOARD_OUT)]}
+            size={[END_BOARD_LEN, BOARD_H, 0.12]}
           />
         )),
       )}

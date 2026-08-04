@@ -1,14 +1,20 @@
 import * as THREE from "three";
 import { useFrame } from "@react-three/fiber";
 import { useGameStore } from "@/game/state/gameStore";
+import { isPlayingPhase } from "@/game/state/types";
 import {
   ballApi,
   ballPosition,
+  clearPass,
   dribbleState,
   nearestPlayerToBall,
+  passState,
   playerRegistry,
+  type PlayerRecord,
 } from "./worldRegistry";
+import { clearSelection } from "./selectionSystem";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
+import { audio } from "./audio";
 
 const BALL_R = PHYSICS_CONFIG.ball.radius;
 /** A player within this distance of the ball is in possession. */
@@ -18,26 +24,28 @@ const CARRY_DIST = 0.85;
 /** Spring stiffness pulling the ball to the carry point. */
 const CARRY_STIFFNESS = 12;
 const MAX_CARRY_SPEED = 13;
+/** A newcomer must be this much closer than the current carrier to steal it. */
+const STEAL_MARGIN = 0.5;
 
 const _carry = new THREE.Vector3();
 const _vel = new THREE.Vector3();
 const _ball = new THREE.Vector3();
-/** A newcomer must be this much closer than the current carrier to steal it. */
-const STEAL_MARGIN = 0.5;
 
 /**
- * The heart of the new control model:
- *  - Whichever player is on the ball "carries" it at their feet (close-control
- *    dribbling) instead of the ball pinging away on contact.
- *  - Control always follows the ball for the user's team: the moment a home
- *    outfield player gets on the ball, you take control of them — so a pass to
- *    a team-mate transfers control to whoever receives it.
+ * Ball possession and pass resolution.
+ *
+ * Whoever is on the ball "carries" it at their feet (close-control dribbling)
+ * instead of the ball pinging away on contact.
+ *
+ * Control does NOT follow the ball. It changes only when the user makes it
+ * change: by completing a pass to a selected team-mate, or by tapping a
+ * team-mate twice to take them over (see selectionSystem).
  */
 export function PossessionController() {
   useFrame(() => {
     const body = ballApi.body;
     const state = useGameStore.getState();
-    if (!body || state.phase !== "live") {
+    if (!body || !isPlayingPhase(state.phase)) {
       dribbleState.possessorId = null;
       return;
     }
@@ -56,15 +64,7 @@ export function PossessionController() {
     }
     dribbleState.possessorId = possessor ? possessor.id : null;
 
-    // Control follows the ball for the human team (never the keeper).
-    if (
-      possessor &&
-      possessor.team === "home" &&
-      !possessor.isGoalkeeper &&
-      possessor.id !== state.controlledPlayerId
-    ) {
-      state.setControlledPlayer(possessor.id);
-    }
+    resolvePass(possessor, state.setControlledPlayer);
 
     // Carry the ball at the possessor's feet (unless a kick just released it).
     const now = performance.now() / 1000;
@@ -90,4 +90,51 @@ export function PossessionController() {
   });
 
   return null;
+}
+
+/**
+ * Decide what happened to a pass in flight. This is the ONLY place control ever
+ * transfers as a result of the ball moving, and only for passes the user played.
+ */
+function resolvePass(
+  possessor: PlayerRecord | null,
+  setControlledPlayer: (id: string) => void,
+): void {
+  if (!passState.active) return;
+
+  // Nobody has touched it yet — just watch for the pass going dead.
+  if (!possessor) {
+    if (performance.now() / 1000 > passState.expiresAt) clearPass();
+    return;
+  }
+
+  if (possessor.id === passState.fromId) return; // still at the passer's feet
+
+  const passer = passState.fromId ? playerRegistry.get(passState.fromId) : null;
+
+  if (possessor.id === passState.targetId) {
+    // Received cleanly by the intended team-mate.
+    if (passState.byUser && !possessor.isGoalkeeper) {
+      setControlledPlayer(possessor.id);
+    }
+    clearSelection();
+    clearPass();
+    return;
+  }
+
+  if (passer && possessor.team !== passer.team) {
+    // Cut out by an opponent. Control stays with whoever played the pass.
+    if (passState.byUser) audio.intercept();
+    clearSelection();
+    clearPass();
+    return;
+  }
+
+  // A different team-mate got there first — a deflection still belongs to your
+  // team, so control follows to them.
+  if (passState.byUser && !possessor.isGoalkeeper) {
+    setControlledPlayer(possessor.id);
+  }
+  clearSelection();
+  clearPass();
 }

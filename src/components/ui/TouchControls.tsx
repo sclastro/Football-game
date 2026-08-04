@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import { virtualInput, resetVirtualInput } from "@/game/systems/virtualInput";
+import { handleScreenTap } from "@/game/systems/selectionSystem";
 
 const STICK_RADIUS = 70; // px — movement stick
 const DEAD_ZONE = 0.14;
 const EXPO = 1.35; // >1 = finer control near the centre
 const SPRINT_AT = 0.92; // full extension sprints
 
-const SHOOT_RADIUS = 62; // px — shoot/aim stick
-const SHOOT_DEAD = 0.12; // below this a release is a tap (facing kick)
+const SHOOT_RADIUS = 58; // px — shoot/aim stick
+const PASS_SIZE = 76; // px — pass button
+
+/** A pointer that moved less than this, for less than this long, is a tap. */
+const TAP_MAX_PX = 14;
+const TAP_MAX_MS = 260;
 
 interface StickState {
   baseX: number;
@@ -18,17 +23,18 @@ interface StickState {
 }
 
 /**
- * Touch controls tuned for phones:
- * - LEFT: dynamic movement joystick — touch anywhere on the left half and the
- *   stick appears under your thumb; dead zone + expo for fine control; push to
- *   full extension to sprint (the ring lights up).
- * - RIGHT: a single SHOOT stick — drag it in a direction to aim, release to
- *   kick. A small drag is a short pass, a big drag is a shot: one control does
- *   both (no separate pass/shoot buttons).
+ * Touch controls.
+ *
+ * - LEFT half: dynamic movement joystick — touch anywhere and the stick appears
+ *   under your thumb. A quick TAP (rather than a drag) instead selects the
+ *   player you tapped, so selection works on both halves of the screen.
+ * - RIGHT: a SHOOT stick you drag to aim and release to strike, and a PASS
+ *   button that plays the ball to whoever you have selected.
  */
 export function TouchControls() {
   const [stick, setStick] = useState<StickState | null>(null);
   const pointerId = useRef<number | null>(null);
+  const tapStart = useRef({ x: 0, y: 0, t: 0, moved: false });
 
   // Clear any held stick/buttons if the controls unmount (e.g. switching mode).
   useEffect(() => resetVirtualInput, []);
@@ -69,25 +75,46 @@ export function TouchControls() {
     virtualInput.sprint = false;
   };
 
+  const beginTap = (x: number, y: number) => {
+    tapStart.current = { x, y, t: performance.now(), moved: false };
+  };
+
+  const trackTap = (x: number, y: number) => {
+    const s = tapStart.current;
+    if (Math.hypot(x - s.x, y - s.y) > TAP_MAX_PX) s.moved = true;
+  };
+
+  /** Fire selection if the gesture was a tap rather than a drag. */
+  const finishTap = (x: number, y: number) => {
+    const s = tapStart.current;
+    if (s.moved) return;
+    if (performance.now() - s.t > TAP_MAX_MS) return;
+    handleScreenTap(x, y);
+  };
+
   const sprinting = stick ? stick.mag > 0 && virtualInput.sprint : false;
 
   return (
     <>
-      {/* Left half: dynamic movement joystick */}
+      {/* Left half: movement joystick + tap-to-select */}
       <div
         className="pointer-events-auto absolute inset-y-0 left-0 w-1/2 touch-none select-none"
         onPointerDown={(e) => {
           if (pointerId.current !== null) return;
           pointerId.current = e.pointerId;
           (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+          beginTap(e.clientX, e.clientY);
           applyStick(e.clientX, e.clientY, e.clientX, e.clientY);
         }}
         onPointerMove={(e) => {
           if (pointerId.current !== e.pointerId || !stick) return;
+          trackTap(e.clientX, e.clientY);
           applyStick(stick.baseX, stick.baseY, e.clientX, e.clientY);
         }}
         onPointerUp={(e) => {
-          if (pointerId.current === e.pointerId) endStick();
+          if (pointerId.current !== e.pointerId) return;
+          finishTap(e.clientX, e.clientY);
+          endStick();
         }}
         onPointerCancel={(e) => {
           if (pointerId.current === e.pointerId) endStick();
@@ -123,23 +150,58 @@ export function TouchControls() {
             />
           </div>
         )}
-        {!stick && (
-          <div className="absolute bottom-10 left-8 rounded-full bg-white/10 px-4 py-2 text-xs font-semibold text-white/60 backdrop-blur-sm">
-            Touch &amp; drag to move
-          </div>
-        )}
       </div>
 
-      {/* Right: single SHOOT / aim stick */}
-      <ShootStick />
+      {/* Right half: tap-to-select (sits under the action controls) */}
+      <div
+        className="pointer-events-auto absolute inset-y-0 right-0 w-1/2 touch-none select-none"
+        onPointerDown={(e) => beginTap(e.clientX, e.clientY)}
+        onPointerMove={(e) => trackTap(e.clientX, e.clientY)}
+        onPointerUp={(e) => finishTap(e.clientX, e.clientY)}
+      />
+
+      {/* Action controls */}
+      <div
+        className="pointer-events-none absolute bottom-0 right-0 flex items-end gap-3 p-5"
+        style={{ paddingBottom: "calc(1.75rem + env(safe-area-inset-bottom))" }}
+      >
+        <PassButton />
+        <ShootStick />
+      </div>
     </>
   );
 }
 
+/** Taps play the ball to the selected team-mate (or the best option in front). */
+function PassButton() {
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      className={`pointer-events-auto mb-2 touch-none select-none rounded-full font-black text-white shadow-xl ring-2 backdrop-blur-sm transition ${
+        pressed
+          ? "scale-90 bg-sky-400/90 ring-white/80 brightness-125"
+          : "bg-sky-500/85 ring-white/40"
+      }`}
+      style={{ width: PASS_SIZE, height: PASS_SIZE, fontSize: PASS_SIZE * 0.19 }}
+      onPointerDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setPressed(true);
+        virtualInput.passRequested = true;
+      }}
+      onPointerUp={() => setPressed(false)}
+      onPointerCancel={() => setPressed(false)}
+      onPointerLeave={() => setPressed(false)}
+    >
+      PASS
+    </button>
+  );
+}
+
 /**
- * Fixed-base aim stick. Drag from the pad to aim, release to kick. The drag
- * length sets the power (short = pass, long = shot) and the drag direction sets
- * where the ball goes, so you can shoot to the right while running left.
+ * Fixed-base aim stick. Drag from the pad to aim, release to strike. The drag
+ * length sets the power (short = flat drive, long = arcing shot) and the drag
+ * direction sets where the ball goes, so you can shoot right while running left.
  */
 function ShootStick() {
   const pid = useRef<number | null>(null);
@@ -161,11 +223,12 @@ function ShootStick() {
     virtualInput.shootHeld = true;
     virtualInput.shootAimX = (dx / nd) * mag;
     virtualInput.shootAimY = (dy / nd) * mag;
+    virtualInput.shootPower = mag;
   };
 
   const end = (k: { dx: number; dy: number; mag: number } | null) => {
     const mag = k ? k.mag : 0;
-    if (k && mag > SHOOT_DEAD) {
+    if (k && mag > 0.12) {
       const nd = Math.hypot(k.dx, k.dy) || 1;
       virtualInput.fireAimX = k.dx / nd;
       virtualInput.fireAimY = k.dy / nd;
@@ -178,6 +241,7 @@ function ShootStick() {
     virtualInput.shootHeld = false;
     virtualInput.shootAimX = 0;
     virtualInput.shootAimY = 0;
+    virtualInput.shootPower = 0;
     setKnob(null);
     pid.current = null;
   };
@@ -187,14 +251,10 @@ function ShootStick() {
 
   return (
     <div
-      className="pointer-events-auto absolute touch-none select-none rounded-full"
-      style={{
-        right: "2rem",
-        bottom: "calc(2.5rem + env(safe-area-inset-bottom))",
-        width: SHOOT_RADIUS * 2,
-        height: SHOOT_RADIUS * 2,
-      }}
+      className="pointer-events-auto relative touch-none select-none rounded-full"
+      style={{ width: SHOOT_RADIUS * 2, height: SHOOT_RADIUS * 2 }}
       onPointerDown={(e) => {
+        e.stopPropagation();
         if (pid.current !== null) return;
         pid.current = e.pointerId;
         const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
@@ -212,29 +272,40 @@ function ShootStick() {
         if (pid.current === e.pointerId) end(knob);
       }}
     >
-      {/* Base ring — tints from blue (pass) to red (shot) with power */}
+      {/* Base ring — tints from red through to a hot strike with power */}
       <div
         className={`absolute inset-0 rounded-full backdrop-blur-sm transition-colors ${
           shooting
-            ? "bg-red-500/30 ring-2 ring-red-400/80"
+            ? "bg-red-500/40 ring-4 ring-red-300/90"
             : power > 0
-              ? "bg-sky-500/25 ring-2 ring-sky-300/70"
+              ? "bg-orange-500/30 ring-2 ring-orange-300/80"
               : "bg-red-500/25 ring-2 ring-white/40"
         }`}
       />
+      {/* Power arc around the rim */}
+      {power > 0 && (
+        <div
+          className="pointer-events-none absolute inset-[-6px] rounded-full"
+          style={{
+            background: `conic-gradient(#fde047 ${power * 360}deg, transparent 0deg)`,
+            mask: "radial-gradient(circle, transparent 61%, black 63%)",
+            WebkitMask: "radial-gradient(circle, transparent 61%, black 63%)",
+          }}
+        />
+      )}
       {/* Label / knob */}
       {knob ? (
         <div
-          className="absolute rounded-full bg-white/85 shadow-lg"
+          className="pointer-events-none absolute rounded-full bg-white/85 shadow-lg"
           style={{
-            width: SHOOT_RADIUS * 0.72,
-            height: SHOOT_RADIUS * 0.72,
-            left: SHOOT_RADIUS * 0.64 + knob.dx,
-            top: SHOOT_RADIUS * 0.64 + knob.dy,
+            width: SHOOT_RADIUS * 0.7,
+            height: SHOOT_RADIUS * 0.7,
+            left: SHOOT_RADIUS * 0.65 + knob.dx,
+            top: SHOOT_RADIUS * 0.65 + knob.dy,
           }}
         />
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center">
+        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="text-sm font-black tracking-wide text-white drop-shadow">
             SHOOT
           </span>

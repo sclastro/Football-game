@@ -119,6 +119,140 @@ class AudioEngine {
     }
   }
 
+  /** Short bright blip when you select or take over a player. */
+  select() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "triangle";
+    osc.frequency.setValueAtTime(760, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(1180, ctx.currentTime + 0.07);
+    g.gain.setValueAtTime(0.16, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.11);
+    osc.connect(g).connect(master);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.12);
+  }
+
+  /** Lighter, higher tap than a shot — used for passes. */
+  pass() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(300, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(150, ctx.currentTime + 0.07);
+    g.gain.setValueAtTime(0.32, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.09);
+    osc.connect(g).connect(master);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.1);
+
+    const src = this.noise(0.04);
+    if (src) {
+      const bp = ctx.createBiquadFilter();
+      bp.type = "bandpass";
+      bp.frequency.value = 2400;
+      const ng = ctx.createGain();
+      ng.gain.setValueAtTime(0.16, ctx.currentTime);
+      ng.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.04);
+      src.connect(bp).connect(ng).connect(master);
+    }
+  }
+
+  /** Scuffed thud for a tackle or a cut-out pass. */
+  intercept() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const src = this.noise(0.16);
+    if (!src) return;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(1400, ctx.currentTime);
+    lp.frequency.exponentialRampToValueAtTime(300, ctx.currentTime + 0.16);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.32, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.16);
+    src.connect(lp).connect(g).connect(master);
+  }
+
+  /** Metallic ring for hitting the post or crossbar. */
+  post() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    [1180, 1790, 2630].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = f;
+      const peak = 0.22 / (i + 1);
+      g.gain.setValueAtTime(peak, ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.1 - i * 0.25);
+      osc.connect(g).connect(master);
+      if (this.reverbSend) g.connect(this.reverbSend);
+      osc.start();
+      osc.stop(ctx.currentTime + 1.2);
+    });
+  }
+
+  /** Crowd "oooh" for a near miss — a short swell that falls away. */
+  nearMiss() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const src = this.noise(1.0);
+    if (!src) return;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.frequency.setValueAtTime(700, ctx.currentTime);
+    bp.frequency.linearRampToValueAtTime(420, ctx.currentTime + 0.9);
+    bp.Q.value = 1.1;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.34, ctx.currentTime + 0.18);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.0);
+    src.connect(bp).connect(g).connect(master);
+  }
+
+  /** Disappointed crowd groan — a saved or missed penalty. */
+  groan() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const src = this.noise(1.3);
+    if (!src) return;
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(520, ctx.currentTime);
+    lp.frequency.linearRampToValueAtTime(240, ctx.currentTime + 1.2);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.4, ctx.currentTime + 0.15);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 1.3);
+    src.connect(lp).connect(g).connect(master);
+  }
+
+  /**
+   * Swell the crowd bed up for a moment (entrance walk-out, penalty tension)
+   * and let it settle back to the ambient level.
+   */
+  swell(peak = 0.16, seconds = 4) {
+    const ctx = this.ctx;
+    const crowd = this.crowd;
+    if (!ctx || !crowd || !this.enabled) return;
+    const base = 0.06;
+    crowd.gain.cancelScheduledValues(ctx.currentTime);
+    crowd.gain.setValueAtTime(crowd.gain.value, ctx.currentTime);
+    crowd.gain.linearRampToValueAtTime(peak, ctx.currentTime + seconds * 0.4);
+    crowd.gain.linearRampToValueAtTime(base, ctx.currentTime + seconds);
+  }
+
   /** Referee whistle: two short high tones. */
   whistle() {
     const ctx = this.ctx;

@@ -5,6 +5,7 @@ import type { InputState } from "./inputSystem";
 import {
   playerRegistry,
   dribbleState,
+  passState,
   type PlayerRecord,
 } from "./worldRegistry";
 
@@ -20,16 +21,22 @@ const {
   maxShotImpulse,
   maxChargeTime,
   passCooldown,
+  loftThreshold,
+  maxLiftImpulse,
 } = PHYSICS_CONFIG.ball;
 
-/** Timestamp (s) of the last pass/shot, so kicks can't be spammed. */
-const kickClock = { lastKickAt: 0 };
+/**
+ * Timestamp (s) of each player's last kick, so kicks can't be spammed. This is
+ * PER PLAYER — a single shared cooldown meant one player's pass silently
+ * blocked every other player's for the whole cooldown window.
+ */
+const lastKickAt = new Map<string, number>();
 
-function kickReady(): boolean {
-  return performance.now() / 1000 - kickClock.lastKickAt >= passCooldown;
+function kickReady(id: string): boolean {
+  return performance.now() / 1000 - (lastKickAt.get(id) ?? 0) >= passCooldown;
 }
-function markKick(): void {
-  kickClock.lastKickAt = performance.now() / 1000;
+function markKick(id: string): void {
+  lastKickAt.set(id, performance.now() / 1000);
 }
 
 /** Facing unit vector on the XZ plane for a given yaw (matches player forward). */
@@ -39,6 +46,9 @@ export function facingVector(yaw: number, out = new THREE.Vector3()) {
 
 const _dir = new THREE.Vector3();
 const _impulse = new THREE.Vector3();
+const _up = new THREE.Vector3(0, 1, 0);
+const _toMate = new THREE.Vector3();
+const _facing = new THREE.Vector3();
 
 /** Horizontal distance from a player position to the ball. */
 export function horizontalDistanceToBall(
@@ -52,35 +62,49 @@ export function horizontalDistanceToBall(
 }
 
 /**
- * On shoot-key release, if the ball is within kick range, launch it along the
- * player's facing direction with power scaled by how long the key was charged.
+ * How much lift a shot gets for a given 0..1 power. Below the threshold a shot
+ * stays flat on the deck (short strikes remain easy to control, which is what
+ * the ground-only rule was protecting); past it the arc ramps in quadratically,
+ * so only a big pull sends it up and long.
+ */
+export function liftForPower(power: number): number {
+  if (power <= loftThreshold) return 0;
+  const t = (power - loftThreshold) / (1 - loftThreshold);
+  return maxLiftImpulse * t * t;
+}
+
+/**
+ * On shoot release, if the ball is in range, launch it. Power comes from the
+ * charge (keyboard) or drag length (touch); direction comes from the touch
+ * stick's aim when present, otherwise from the player's facing.
  * Returns true if a shot was actually fired (for triggering a kick animation).
  */
 export function tryShoot(
   ball: RapierRigidBody,
+  selfId: string,
   playerPos: THREE.Vector3,
   yaw: number,
   input: InputState,
 ): boolean {
   if (!input.shootReleased) return false;
-  if (!kickReady()) return false;
+  if (!kickReady(selfId)) return false;
   if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
 
-  const charge = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
-  const power = THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, charge);
+  const power = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
+  const drive = THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, power);
 
-  // Touch stick can aim the shot; otherwise fire along the player's facing.
+  // The touch stick can aim independently of where the player is facing, so you
+  // can strike to the right while sprinting left.
   if (input.hasShootAim && (input.shootAimX !== 0 || input.shootAimZ !== 0)) {
     _dir.set(input.shootAimX, 0, input.shootAimZ).normalize();
   } else {
     facingVector(yaw, _dir);
   }
-  _impulse.copy(_dir).multiplyScalar(power);
-  // Ground shot: keep the ball down so it's controllable (no lofted shots).
-  _impulse.y = 0;
+  _impulse.copy(_dir).multiplyScalar(drive);
+  _impulse.y = liftForPower(power);
 
   ball.applyImpulse(_impulse, true);
-  markKick();
+  markKick(selfId);
   releaseBall();
   return true;
 }
@@ -95,6 +119,7 @@ export function aiKick(
   playerPos: THREE.Vector3,
   target: THREE.Vector3,
   power: number,
+  scatter = 1,
 ): boolean {
   if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
 
@@ -103,24 +128,19 @@ export function aiKick(
   if (_dir.lengthSq() < 0.001) return false;
   _dir.normalize();
 
-  // Aim scatter: up to ~5 degrees either way.
-  const scatter = (Math.random() - 0.5) * 0.18;
-  _dir.applyAxisAngle(_up, scatter);
+  // Aim scatter: up to ~5 degrees either way at scatter = 1.
+  _dir.applyAxisAngle(_up, (Math.random() - 0.5) * 0.18 * scatter);
 
   _impulse.copy(_dir).multiplyScalar(power);
-  _impulse.y = 0; // ground ball
+  _impulse.y = 0; // AI keeps it on the deck
   ball.applyImpulse(_impulse, true);
   releaseBall();
   return true;
 }
 
-const _up = new THREE.Vector3(0, 1, 0);
-const _toMate = new THREE.Vector3();
-const _facing = new THREE.Vector3();
-
 /** Pass reach and power tuning. */
 const PASS_MIN_DIST = 2;
-const PASS_MAX_DIST = 26;
+const PASS_MAX_DIST = 34;
 const PASS_CONE_DEG = 75;
 
 /**
@@ -174,34 +194,63 @@ export function choosePassReceiver(
 }
 
 /**
- * Kick the ball toward a teammate with distance-scaled power. Control follows
- * the ball automatically (see PossessionController), so no separate tracking.
- * Returns true if the pass was struck.
+ * Strike a ground pass at a specific team-mate and register it as a pass in
+ * flight, so the possession system can transfer control on arrival — or detect
+ * that an opponent cut it out.
+ *
+ * `byUser` marks a pass played by the human-controlled player; only those move
+ * the camera and control to the receiver. AI teammates passing among themselves
+ * must never yank control away from you.
+ */
+export function tryPassTo(
+  ball: RapierRigidBody,
+  selfId: string,
+  playerPos: THREE.Vector3,
+  receiver: PlayerRecord,
+  byUser: boolean,
+): boolean {
+  if (!kickReady(selfId)) return false;
+  if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
+
+  const t = ball.translation();
+  // Lead the pass slightly so it arrives where the receiver is heading.
+  _dir.set(receiver.position.x - t.x, 0, receiver.position.z - t.z);
+  const dist = _dir.length();
+  if (dist < 0.5) return false;
+  _dir.normalize();
+
+  // Enough pace to arrive briskly, gentle enough to be controllable. Ground
+  // ball — passes never leave the deck, so they stay easy to receive.
+  const power = THREE.MathUtils.clamp(dist * 0.55, 3.5, 13);
+  _impulse.copy(_dir).multiplyScalar(power);
+  _impulse.y = 0;
+  ball.applyImpulse(_impulse, true);
+  markKick(selfId);
+  releaseBall();
+
+  passState.active = true;
+  passState.byUser = byUser;
+  passState.fromId = selfId;
+  passState.targetId = receiver.id;
+  passState.origin.set(t.x, 0, t.z);
+  passState.target.set(receiver.position.x, 0, receiver.position.z);
+  passState.expiresAt =
+    performance.now() / 1000 + THREE.MathUtils.clamp(dist / 5, 1, 5) + 1.5;
+  return true;
+}
+
+/**
+ * Pass to whoever the cone search likes best. Used when nothing is selected and
+ * by the AI.
  */
 export function tryPass(
   ball: RapierRigidBody,
   selfId: string,
   playerPos: THREE.Vector3,
   yaw: number,
+  byUser = false,
 ): boolean {
-  if (!kickReady()) return false;
-  if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
-
   const receiver = choosePassReceiver(selfId, playerPos, yaw);
   if (!receiver) return false;
-
-  const t = ball.translation();
-  _dir.set(receiver.position.x - t.x, 0, receiver.position.z - t.z);
-  const dist = _dir.length();
-  if (dist < 0.5) return false;
-  _dir.normalize();
-
-  // Enough pace to arrive briskly, gentle enough to be controllable. Ground ball.
-  const power = THREE.MathUtils.clamp(dist * 0.5, 3, 9.5);
-  _impulse.copy(_dir).multiplyScalar(power);
-  _impulse.y = 0;
-  ball.applyImpulse(_impulse, true);
-  markKick();
-  releaseBall();
-  return true;
+  return tryPassTo(ball, selfId, playerPos, receiver, byUser);
 }

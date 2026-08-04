@@ -1,8 +1,8 @@
 import { useGameStore } from "@/game/state/gameStore";
-import { ROSTERS } from "@/game/data/teams";
 import { FIELD_DIMENSIONS } from "./Field";
 
 const DUGOUT_X = FIELD_DIMENSIONS.width / 2 + 1.6;
+const DUGOUT_Z = FIELD_DIMENSIONS.length * 0.14;
 const SEAT_SPACING = 1.1;
 
 /** A seated substitute: blocky mini-figure on the bench. */
@@ -131,14 +131,13 @@ export function Benches({
   homeColor: string;
   awayColor: string;
 }) {
-  // Subbed-off players swap into this list, so the bench stays visually full.
   const homeBench = useGameStore((s) => s.homeBench);
-  const awayBenchIds = ROSTERS.away.bench.map((p) => p.id);
+  const awayBench = useGameStore((s) => s.awayBench);
 
   return (
     <>
-      <Dugout centerZ={-8} shirtColor={homeColor} benchIds={homeBench} />
-      <Dugout centerZ={8} shirtColor={awayColor} benchIds={awayBenchIds} />
+      <Dugout centerZ={-DUGOUT_Z} shirtColor={homeColor} benchIds={homeBench} />
+      <Dugout centerZ={DUGOUT_Z} shirtColor={awayColor} benchIds={awayBench} />
     </>
   );
 }

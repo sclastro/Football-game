@@ -12,6 +12,12 @@ export interface AiState {
   nextJitterAt: number
   /** The AI won't react to a new loose ball until this time (reaction delay). */
   reactUntil: number
+  /** Set while this player is the user's selected teammate: break into space. */
+  makeRun: boolean
+  /** Cached SupportRun destination, refreshed on a timer to avoid dithering. */
+  runX: number
+  runZ: number
+  nextRunAt: number
 }
 
 export interface PlayerRecord {
@@ -44,6 +50,41 @@ export const ballApi: { body: RapierRigidBody | null } = { body: null }
 export const dribbleState: { possessorId: string | null; releaseUntil: number } = {
   possessorId: null,
   releaseUntil: 0,
+}
+
+/**
+ * A pass currently travelling between two players. Control transfers to
+ * `targetId` when it arrives; an opponent reaching the ball first is an
+ * interception and control stays with the passer.
+ */
+export const passState: {
+  active: boolean
+  /** True only for a pass played by the human-controlled player. */
+  byUser: boolean
+  fromId: string | null
+  targetId: string | null
+  /** Perf-clock seconds after which an unreceived pass is considered dead. */
+  expiresAt: number
+  /** Where the pass was struck from, for interception lane maths. */
+  origin: THREE.Vector3
+  /** Where the receiver was standing when it was struck. */
+  target: THREE.Vector3
+} = {
+  active: false,
+  byUser: false,
+  fromId: null,
+  targetId: null,
+  expiresAt: 0,
+  origin: new THREE.Vector3(),
+  target: new THREE.Vector3(),
+}
+
+export function clearPass(): void {
+  passState.active = false
+  passState.byUser = false
+  passState.fromId = null
+  passState.targetId = null
+  passState.expiresAt = 0
 }
 
 /** Nearest player of any team to the ball within `radius`, optionally incl. GK. */

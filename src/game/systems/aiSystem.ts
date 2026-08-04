@@ -5,6 +5,7 @@ import {
   dribbleState,
   isClosestTeammateToBall,
   playerRegistry,
+  type AiState,
   type PlayerRecord,
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
@@ -20,13 +21,17 @@ const _ball = new THREE.Vector3()
 const _target = new THREE.Vector3()
 
 /** Fresh randomised AI traits, so no two players behave identically. */
-export function makeAiState() {
+export function makeAiState(): AiState {
   return {
     speed: 0.9 + Math.random() * 0.14, // 0.90 - 1.04 of the AI base factor
     jitterX: 0,
     jitterZ: 0,
     nextJitterAt: 0,
     reactUntil: 0,
+    makeRun: false,
+    runX: 0,
+    runZ: 0,
+    nextRunAt: 0,
   }
 }
 

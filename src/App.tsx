@@ -1,8 +1,19 @@
 import { useGameStore } from '@/game/state/gameStore'
 import GameShell from '@/components/canvas/GameShell'
-import { StartMenu } from '@/components/ui/StartMenu'
+import { TitleScreen } from '@/components/ui/TitleScreen'
+import { TeamSelect } from '@/components/ui/TeamSelect'
+import { SquadSelect } from '@/components/ui/SquadSelect'
 
 export default function App() {
   const screen = useGameStore((s) => s.screen)
-  return screen === 'playing' ? <GameShell /> : <StartMenu />
+  switch (screen) {
+    case 'playing':
+      return <GameShell />
+    case 'squadSelect':
+      return <SquadSelect />
+    case 'teamSelect':
+      return <TeamSelect />
+    default:
+      return <TitleScreen />
+  }
 }

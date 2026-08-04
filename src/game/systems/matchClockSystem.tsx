@@ -4,6 +4,7 @@ import { ballApi } from "./worldRegistry";
 import { FIELD_DIMENSIONS } from "@/game/entities/Field";
 import { GOAL_DIMENSIONS } from "@/game/entities/Goal";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
+import { isPlayingPhase } from "@/game/state/types";
 import { audio } from "./audio";
 
 const HALF_W = FIELD_DIMENSIONS.width / 2;
@@ -14,19 +15,33 @@ const BALL_R = PHYSICS_CONFIG.ball.radius;
 
 /**
  * Drives match flow from the render loop:
- * - ticks the countdown while live;
+ * - ticks the countdown while the ball is in play (regulation or extra time);
  * - goal detection by ball position: only counts once the WHOLE ball has
  *   crossed the goal line between the posts, under the bar;
  * - real out-of-play: the moment the whole ball crosses a touchline or the
  *   goal line outside the goal, the ball returns to the centre spot and both
  *   teams reset to formation (a fresh kickoff);
- * - resumes play after the GOAL! stoppage.
+ * - resumes play after the GOAL! stoppage;
+ * - runs the entrance countdown and the shootout timeline.
  */
 export function MatchClock() {
   useFrame((_, delta) => {
     const state = useGameStore.getState();
 
-    if (state.phase === "live") {
+    if (state.phase === "entrance") {
+      if (performance.now() / 1000 >= state.entranceUntil) {
+        state.beginPlay();
+        audio.whistle();
+      }
+      return;
+    }
+
+    if (state.phase === "shootout") {
+      state.tickShootout();
+      return;
+    }
+
+    if (isPlayingPhase(state.phase)) {
       state.tickClock(delta);
 
       const body = ballApi.body;
@@ -54,8 +69,7 @@ export function MatchClock() {
         audio.whistle();
       }
     } else if (state.phase === "goalStoppage") {
-      const now = performance.now() / 1000;
-      if (now >= state.goalFlashUntil) {
+      if (performance.now() / 1000 >= state.goalFlashUntil) {
         state.restartAfterGoal();
       }
     }
