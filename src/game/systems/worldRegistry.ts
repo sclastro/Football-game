@@ -14,6 +14,12 @@ export interface AiState {
   reactUntil: number
   /** Set while this player is the user's selected teammate: break into space. */
   makeRun: boolean
+  /** Perf-clock seconds until which a keeper's dive pose plays. */
+  diveUntil: number
+  /** -1 dive left, +1 dive right, 0 none. */
+  diveSide: number
+  /** Extra speed multiplier (keepers get one while diving). */
+  speedBoost: number
   /** Cached SupportRun destination, refreshed on a timer to avoid dithering. */
   runX: number
   runZ: number
@@ -29,6 +35,8 @@ export interface PlayerRecord {
   /** Live facing yaw (radians), updated every frame by the entity. */
   yaw: number
   spawn: [number, number, number]
+  /** Index of this player's formation slot, used for line-ups and ordering. */
+  slotIndex: number
   rigidBody: RapierRigidBody | null
   ai: AiState
 }
@@ -112,6 +120,13 @@ export function ballPosition(out = new THREE.Vector3()): THREE.Vector3 | null {
   if (!body) return null
   const t = body.translation()
   return out.set(t.x, t.y, t.z)
+}
+
+export function ballVelocity(out = new THREE.Vector3()): THREE.Vector3 | null {
+  const body = ballApi.body
+  if (!body) return null
+  const v = body.linvel()
+  return out.set(v.x, v.y, v.z)
 }
 
 const _scratch = new THREE.Vector3()

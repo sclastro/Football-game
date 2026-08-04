@@ -14,12 +14,30 @@ import {
   tryPass,
   tryPassTo,
   aiKick,
-  choosePassReceiver,
+  horizontalDistanceToBall,
 } from "@/game/systems/ballPossessionSystem";
 import { selectionState, clearSelection } from "@/game/systems/selectionSystem";
+import { aimState } from "@/game/systems/aimPreview";
+import { virtualInput } from "@/game/systems/virtualInput";
+import {
+  computeEntranceInput,
+  entranceElapsed,
+} from "@/game/systems/entranceSystem";
 import { isPlayingPhase } from "@/game/state/types";
-import { computeAiInput, makeAiState } from "@/game/systems/aiSystem";
-import { useGameStore } from "@/game/state/gameStore";
+import {
+  computeAiInput,
+  computeAiKick,
+  makeAiState,
+  aiSpeedFactorNow,
+  AI_KICK_COOLDOWN,
+} from "@/game/systems/aiSystem";
+import {
+  applyCelebration,
+  applyTeammateCheer,
+  pickCelebration,
+  type CelebrationRefs,
+} from "@/game/systems/celebrations";
+import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
 import {
   ballApi,
   clearPass,
@@ -28,13 +46,12 @@ import {
   type PlayerRecord,
   type TeamSide,
 } from "@/game/systems/worldRegistry";
-import { FIELD_DIMENSIONS } from "./Field";
 
-const { capsuleRadius, capsuleHalfHeight, aiSpeedFactor } = PHYSICS_CONFIG.player;
+const { capsuleRadius, capsuleHalfHeight } = PHYSICS_CONFIG.player;
 
 // The model group is placed at the capsule centre. Shift the visual meshes down
 // so the feet (lowest leg point) line up with the capsule's bottom / the pitch.
-const LEG_BOTTOM = -0.54;
+const LEG_BOTTOM = -0.58;
 const MODEL_Y_OFFSET = -(capsuleHalfHeight + capsuleRadius) - LEG_BOTTOM;
 
 const SKIN_TONES = ["#f3c9a0", "#e6b088", "#c98a5e", "#a56a3d", "#8a5a34"];
@@ -58,9 +75,58 @@ function contrastText(hex: string): string {
   return luminance(hex) > 0.6 ? "#111111" : "#ffffff";
 }
 
+/** You can aim from a little further out than you can actually strike. */
+const AIM_SHOW_RANGE = PHYSICS_CONFIG.ball.kickRange * 1.8;
+
+/**
+ * Publish the current aim so the on-pitch indicator can draw it. Power comes
+ * from the drag length on touch, or from how long Space has been held on
+ * keyboard; direction comes from the touch stick when it's being dragged,
+ * otherwise from the way the player is facing.
+ */
+function updateAim(
+  ball: RapierRigidBody,
+  playerPos: THREE.Vector3,
+  yaw: number,
+  input: InputState,
+): void {
+  const touchAiming = virtualInput.shootHeld;
+  if (!touchAiming && !input.shootHeld) {
+    aimState.active = false;
+    return;
+  }
+  if (horizontalDistanceToBall(playerPos, ball) > AIM_SHOW_RANGE) {
+    aimState.active = false;
+    return;
+  }
+
+  let dx: number;
+  let dz: number;
+  const ax = virtualInput.shootAimX;
+  const ay = virtualInput.shootAimY;
+  if (touchAiming && Math.hypot(ax, ay) > 0.05) {
+    // Same screen→world mapping the input system uses when the shot fires.
+    const len = Math.hypot(ay, ax) || 1;
+    dx = ay / len;
+    dz = -ax / len;
+  } else {
+    dx = -Math.sin(yaw);
+    dz = -Math.cos(yaw);
+  }
+
+  const t = ball.translation();
+  aimState.active = true;
+  aimState.power = touchAiming
+    ? virtualInput.shootPower
+    : THREE.MathUtils.clamp(input.shootCharge / PHYSICS_CONFIG.ball.maxChargeTime, 0, 1);
+  aimState.dirX = dx;
+  aimState.dirZ = dz;
+  aimState.originX = t.x;
+  aimState.originY = t.y;
+  aimState.originZ = t.z;
+}
+
 const KICK_DURATION = 0.28; // seconds the kick leg-swing plays for
-const AI_KICK_COOLDOWN = 1.1; // seconds between AI kicks
-const AI_KICK_POWER = 7;
 
 interface PlayerEntityProps {
   id: string;
@@ -72,6 +138,8 @@ interface PlayerEntityProps {
   /** GK shirts use this instead of the outfield kit colour. */
   gkColor?: string;
   spawnPosition: [number, number, number];
+  /** Formation slot index, used for the entrance line-up ordering. */
+  slotIndex: number;
 }
 
 /** Low-poly voxel-style character. Human-controlled when the store says so, AI otherwise. */
@@ -83,6 +151,7 @@ export function PlayerEntity({
   accentColor = "#ffffff",
   gkColor = "#37474f",
   spawnPosition,
+  slotIndex,
 }: PlayerEntityProps) {
   const controlled = useGameStore((s) => s.controlledPlayerId) === id;
 
@@ -92,8 +161,12 @@ export function PlayerEntity({
   const leanRef = useRef<THREE.Group>(null);
   const leftLegRef = useRef<THREE.Group>(null);
   const rightLegRef = useRef<THREE.Group>(null);
+  const leftShinRef = useRef<THREE.Group>(null);
+  const rightShinRef = useRef<THREE.Group>(null);
   const leftArmRef = useRef<THREE.Group>(null);
   const rightArmRef = useRef<THREE.Group>(null);
+  const leftForeRef = useRef<THREE.Group>(null);
+  const rightForeRef = useRef<THREE.Group>(null);
 
   const readInput = useInputSystem();
   const { update: updateController, yaw, reset: resetController } =
@@ -102,6 +175,19 @@ export function PlayerEntity({
   const animPhase = useRef(0);
   const kickTimer = useRef(0);
   const aiKickCooldown = useRef(0);
+  /** Latched at the moment of a goal: this player performs the big routine. */
+  const scoringLead = useRef(false);
+  const celebRefs = useMemo<CelebrationRefs>(
+    () => ({
+      group: null,
+      lean: null,
+      leftArm: null,
+      rightArm: null,
+      leftLeg: null,
+      rightLeg: null,
+    }),
+    [],
+  );
 
   // Reusable per-entity buffers (never allocate in useFrame).
   const aiInput = useMemo<InputState>(
@@ -126,22 +212,13 @@ export function PlayerEntity({
       position: new THREE.Vector3(...spawnPosition),
       yaw: 0,
       spawn: spawnPosition,
+      slotIndex,
       rigidBody: null,
       ai: makeAiState(),
     }),
     // Registry record identity must be stable for this entity's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [id],
-  );
-  // Home attacks -Z (the far goal, up the screen); away attacks +Z.
-  const opponentGoal = useMemo(
-    () =>
-      new THREE.Vector3(
-        0,
-        0,
-        team === "home" ? -FIELD_DIMENSIONS.length / 2 : FIELD_DIMENSIONS.length / 2,
-      ),
-    [team],
   );
   // Face the attacking goal at kickoff: home faces -Z (yaw 0, matches W), away +Z.
   const kickoffYaw = team === "home" ? 0 : Math.PI;
@@ -194,7 +271,10 @@ export function PlayerEntity({
     }
 
     let input: InputState;
-    if (controlled && active) {
+    if (phase === "entrance") {
+      // Everyone walks out, including the player you'll be controlling.
+      input = computeEntranceInput(record, aiInput, entranceElapsed());
+    } else if (controlled && active) {
       input = readInput();
     } else if (!controlled && active) {
       input = computeAiInput(record, aiInput);
@@ -204,7 +284,10 @@ export function PlayerEntity({
       input = aiInput;
     }
 
-    const speedScale = controlled ? 1 : record.ai.speed * aiSpeedFactor;
+    // AI pace scales with the chosen difficulty; keepers get a burst mid-dive.
+    const speedScale = controlled
+      ? 1
+      : record.ai.speed * aiSpeedFactorNow() * record.ai.speedBoost;
     const speed = updateController(delta, input, speedScale);
 
     // Mirror the physics body's kinematic transform onto the visual model.
@@ -224,6 +307,7 @@ export function PlayerEntity({
     const ball = ballApi.body;
     if (ball && active) {
       if (controlled) {
+        updateAim(ball, record.position, yaw.current, input);
         if (tryShoot(ball, id, record.position, yaw.current, input)) {
           kickTimer.current = KICK_DURATION;
           audio.kick();
@@ -244,38 +328,13 @@ export function PlayerEntity({
         }
       } else {
         aiKickCooldown.current = Math.max(0, aiKickCooldown.current - delta);
-        const possessorId = dribbleState.possessorId;
-        const possessorRec = possessorId ? playerRegistry.get(possessorId) : null;
-        const teammateHasBall =
-          !!possessorRec && possessorRec.team === team && possessorId !== id;
-
-        // Discipline: NEVER kick a ball a teammate is carrying (this was what
-        // made the ball randomly fly off the user's feet).
-        if (!teammateHasBall && aiKickCooldown.current === 0) {
-          let kicked = false;
-
-          if (possessorId === id) {
-            // I'm carrying: shoot when in range, occasionally lay a pass to a
-            // teammate, otherwise keep dribbling (movement handles it).
-            const distToGoal = record.position.distanceTo(opponentGoal);
-            if (distToGoal < 15) {
-              kicked = aiKick(ball, record.position, opponentGoal, 8.5);
-            } else if (Math.random() < 0.35) {
-              const receiver = choosePassReceiver(id, record.position, yaw.current);
-              // byUser = false: an AI team-mate passing must never yank control
-              // away from the player you're driving.
-              if (receiver) {
-                kicked = tryPassTo(ball, id, record.position, receiver, false);
-              }
-            }
-          } else if (possessorRec && possessorRec.team !== team) {
-            // Opponent is carrying: tackle — poke the ball away, not a punt.
-            kicked = aiKick(ball, record.position, opponentGoal, 4);
-          } else {
-            // Loose ball: clear/advance it toward the attacking end.
-            kicked = aiKick(ball, record.position, opponentGoal, AI_KICK_POWER);
-          }
-
+        if (aiKickCooldown.current === 0) {
+          const kicked = computeAiKick(
+            record,
+            (target, power, scatter) =>
+              aiKick(ball, record.position, target, power, scatter),
+            (receiver) => tryPassTo(ball, id, record.position, receiver, false),
+          );
           if (kicked) {
             kickTimer.current = KICK_DURATION;
             aiKickCooldown.current = AI_KICK_COOLDOWN + Math.random() * 0.6;
@@ -297,6 +356,19 @@ export function PlayerEntity({
     if (leftArmRef.current) leftArmRef.current.rotation.set(-swing, 0, 0);
     if (rightArmRef.current) rightArmRef.current.rotation.set(swing, 0, 0);
 
+    // Knees bend as each leg trails, and elbows stay bent while running — the
+    // two details that stop the stride reading as a pair of stiff pendulums.
+    const kneeBend = 1.5 * speedFraction;
+    if (leftShinRef.current) {
+      leftShinRef.current.rotation.x = Math.max(0, -swing) * kneeBend;
+    }
+    if (rightShinRef.current) {
+      rightShinRef.current.rotation.x = Math.max(0, swing) * kneeBend;
+    }
+    const elbow = -0.25 - speedFraction * 0.8;
+    if (leftForeRef.current) leftForeRef.current.rotation.x = elbow;
+    if (rightForeRef.current) rightForeRef.current.rotation.x = elbow;
+
     // Athletic forward lean while running (model faces -Z, so lean = -rot.x).
     if (leanRef.current) leanRef.current.rotation.x = -speedFraction * 0.18;
 
@@ -306,20 +378,66 @@ export function PlayerEntity({
       const t = 1 - kickTimer.current / KICK_DURATION;
       const kickSwing = Math.sin(t * Math.PI) * -1.4;
       if (rightLegRef.current) rightLegRef.current.rotation.x = kickSwing;
+      // Whip the shin through: bent on the backswing, straight through contact.
+      if (rightShinRef.current) {
+        rightShinRef.current.rotation.x = Math.max(0, 1 - t * 2.2) * 1.3;
+      }
     }
 
-    // Goal celebration: the scoring team leaps with arms raised.
-    if (
-      phase === "goalStoppage" &&
-      useGameStore.getState().lastScorer === record.team &&
-      group
-    ) {
-      const tsec = performance.now() / 1000;
-      group.position.y += Math.abs(Math.sin(tsec * 6)) * 0.3;
-      if (leftArmRef.current) leftArmRef.current.rotation.set(0, 0, 2.5);
-      if (rightArmRef.current) rightArmRef.current.rotation.set(0, 0, -2.5);
-      if (leftLegRef.current) leftLegRef.current.rotation.set(0, 0, 0);
-      if (rightLegRef.current) rightLegRef.current.rotation.set(0, 0, 0);
+    const nowSec = performance.now() / 1000;
+
+    // Keeper dive: a full-length lateral lunge with the arms stretched out.
+    if (record.ai.diveUntil > nowSec) {
+      const t = 1 - (record.ai.diveUntil - nowSec) / 0.55;
+      const extend = Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5);
+      const side = record.ai.diveSide;
+      if (leanRef.current) leanRef.current.rotation.z = side * 1.25 * extend;
+      if (group) group.position.y -= 0.45 * extend;
+      // Both arms reach toward the ball, legs trail behind.
+      if (leftArmRef.current) leftArmRef.current.rotation.set(0, 0, 2.6 * extend);
+      if (rightArmRef.current) rightArmRef.current.rotation.set(0, 0, -2.6 * extend);
+      if (leftLegRef.current) leftLegRef.current.rotation.set(-0.5 * extend, 0, 0);
+      if (rightLegRef.current) rightLegRef.current.rotation.set(0.5 * extend, 0, 0);
+      if (leftShinRef.current) leftShinRef.current.rotation.x = 0.3 * extend;
+      if (rightShinRef.current) rightShinRef.current.rotation.x = 0.3 * extend;
+      if (leftForeRef.current) leftForeRef.current.rotation.x = 0;
+      if (rightForeRef.current) rightForeRef.current.rotation.x = 0;
+    } else if (leanRef.current) {
+      leanRef.current.rotation.z = 0;
+    }
+
+    // Goal celebration: the scorer plays their own routine, team-mates cheer.
+    if (phase === "goalStoppage") {
+      const st = useGameStore.getState();
+      if (st.lastScorer === record.team) {
+        const elapsed = 1 - (st.goalFlashUntil - nowSec) / GOAL_FLASH_DURATION;
+        const t = THREE.MathUtils.clamp(elapsed, 0, 1);
+        celebRefs.group = group;
+        celebRefs.lean = leanRef.current;
+        celebRefs.leftArm = leftArmRef.current;
+        celebRefs.rightArm = rightArmRef.current;
+        celebRefs.leftLeg = leftLegRef.current;
+        celebRefs.rightLeg = rightLegRef.current;
+        // Celebration poses are authored at the hip/shoulder, so straighten the
+        // knees and elbows out of the run cycle first.
+        if (leftShinRef.current) leftShinRef.current.rotation.x = 0;
+        if (rightShinRef.current) rightShinRef.current.rotation.x = 0;
+        if (leftForeRef.current) leftForeRef.current.rotation.x = -0.15;
+        if (rightForeRef.current) rightForeRef.current.rotation.x = -0.15;
+        // The player nearest the ball when it went in is treated as the scorer.
+        if (dribbleState.possessorId === id || scoringLead.current) {
+          scoringLead.current = true;
+          applyCelebration(
+            pickCelebration(id + st.score.home + "-" + st.score.away),
+            t,
+            celebRefs,
+          );
+        } else {
+          applyTeammateCheer(t, celebRefs);
+        }
+      }
+    } else {
+      scoringLead.current = false;
     }
   });
 
@@ -328,6 +446,9 @@ export function PlayerEntity({
   const sockColor = shirtColor;
   const skinTone = SKIN_TONES[pick(id, SKIN_TONES.length)];
   const hairColor = HAIR_COLORS[pick(id + "h", HAIR_COLORS.length)];
+  // 0 = short cap, 1 = buzz, 2 = afro, 3 = long
+  const hairStyle = pick(id + "hair", 4);
+  const hasBeard = pick(id + "beard", 3) === 0;
   const number = PLAYER_INFO[id]?.number ?? 0;
   const numberTex = useMemo(
     () => numberTexture(number, shirtColor, contrastText(shirtColor)),
@@ -349,88 +470,166 @@ export function PlayerEntity({
       <group ref={modelGroupRef} position={spawnPosition}>
         <group ref={leanRef} position={[0, MODEL_Y_OFFSET, 0]}>
           {/* Shorts */}
-          <RoundedBox castShadow args={[0.52, 0.22, 0.32]} radius={0.05} smoothness={2} position={[0, 0.08, 0]}>
-            <meshStandardMaterial color={shortsColor} roughness={0.8} />
+          <RoundedBox castShadow args={[0.5, 0.24, 0.31]} radius={0.05} smoothness={3} position={[0, 0.09, 0]}>
+            <meshStandardMaterial color={shortsColor} roughness={0.85} />
           </RoundedBox>
-          {/* Torso */}
-          <RoundedBox castShadow args={[0.5, 0.56, 0.3]} radius={0.07} smoothness={2} position={[0, 0.42, 0]}>
-            <meshStandardMaterial color={shirtColor} roughness={0.75} />
-          </RoundedBox>
-          {/* Collar trim in the team accent colour */}
-          <RoundedBox args={[0.46, 0.06, 0.27]} radius={0.03} smoothness={2} position={[0, 0.68, 0]}>
+          {/* Shorts trim */}
+          <RoundedBox args={[0.505, 0.04, 0.315]} radius={0.02} smoothness={2} position={[0, 0.0, 0]}>
             <meshStandardMaterial color={accentColor} roughness={0.7} />
           </RoundedBox>
-          {/* Number on the shirt back (+Z is the back; player faces -Z) */}
-          <mesh position={[0, 0.46, 0.165]}>
-            <planeGeometry args={[0.3, 0.3]} />
+          {/* Torso — taller and narrower than a plain block reads as a person */}
+          <RoundedBox castShadow args={[0.44, 0.42, 0.27]} radius={0.08} smoothness={3} position={[0, 0.41, 0]}>
+            <meshStandardMaterial color={shirtColor} roughness={0.78} />
+          </RoundedBox>
+          {/* Chest / shoulder yoke, wider than the waist */}
+          <RoundedBox castShadow args={[0.56, 0.24, 0.29]} radius={0.09} smoothness={3} position={[0, 0.62, 0]}>
+            <meshStandardMaterial color={shirtColor} roughness={0.78} />
+          </RoundedBox>
+          {/* Collar trim in the team accent colour */}
+          <RoundedBox args={[0.3, 0.05, 0.26]} radius={0.02} smoothness={2} position={[0, 0.735, 0]}>
+            <meshStandardMaterial color={accentColor} roughness={0.7} />
+          </RoundedBox>
+          {/* Number on the back (+Z) and front (-Z); player faces -Z */}
+          <mesh position={[0, 0.46, 0.142]}>
+            <planeGeometry args={[0.28, 0.28]} />
+            <meshBasicMaterial map={numberTex} transparent />
+          </mesh>
+          <mesh position={[0, 0.6, -0.152]} rotation={[0, Math.PI, 0]}>
+            <planeGeometry args={[0.15, 0.15]} />
             <meshBasicMaterial map={numberTex} transparent />
           </mesh>
           {/* Neck + head */}
-          <mesh position={[0, 0.74, 0]}>
-            <boxGeometry args={[0.16, 0.1, 0.16]} />
-            <meshStandardMaterial color={skinTone} />
+          <mesh position={[0, 0.78, 0]}>
+            <boxGeometry args={[0.15, 0.08, 0.15]} />
+            <meshStandardMaterial color={skinTone} roughness={0.65} />
           </mesh>
-          <RoundedBox castShadow args={[0.3, 0.3, 0.3]} radius={0.06} smoothness={2} position={[0, 0.9, 0]}>
-            <meshStandardMaterial color={skinTone} roughness={0.6} />
+          <RoundedBox castShadow args={[0.28, 0.3, 0.28]} radius={0.07} smoothness={3} position={[0, 0.94, 0]}>
+            <meshStandardMaterial color={skinTone} roughness={0.62} />
           </RoundedBox>
-          {/* Hair cap */}
-          <RoundedBox castShadow args={[0.32, 0.13, 0.33]} radius={0.05} smoothness={2} position={[0, 1.02, -0.02]}>
-            <meshStandardMaterial color={hairColor} roughness={0.9} />
-          </RoundedBox>
-          {/* Eyes (front face = -Z) */}
-          <mesh position={[-0.07, 0.92, -0.152]}>
-            <boxGeometry args={[0.05, 0.05, 0.02]} />
+
+          {/* Hair, picked deterministically per player */}
+          {hairStyle === 0 && (
+            <RoundedBox castShadow args={[0.3, 0.12, 0.31]} radius={0.05} smoothness={3} position={[0, 1.06, -0.01]}>
+              <meshStandardMaterial color={hairColor} roughness={0.95} />
+            </RoundedBox>
+          )}
+          {hairStyle === 1 && (
+            <RoundedBox castShadow args={[0.285, 0.06, 0.29]} radius={0.03} smoothness={2} position={[0, 1.08, 0]}>
+              <meshStandardMaterial color={hairColor} roughness={1} />
+            </RoundedBox>
+          )}
+          {hairStyle === 2 && (
+            <RoundedBox castShadow args={[0.36, 0.26, 0.36]} radius={0.12} smoothness={4} position={[0, 1.06, 0]}>
+              <meshStandardMaterial color={hairColor} roughness={1} />
+            </RoundedBox>
+          )}
+          {hairStyle === 3 && (
+            <>
+              <RoundedBox castShadow args={[0.31, 0.14, 0.32]} radius={0.05} smoothness={3} position={[0, 1.05, 0]}>
+                <meshStandardMaterial color={hairColor} roughness={0.95} />
+              </RoundedBox>
+              <RoundedBox castShadow args={[0.26, 0.2, 0.1]} radius={0.04} smoothness={2} position={[0, 0.92, 0.15]}>
+                <meshStandardMaterial color={hairColor} roughness={0.95} />
+              </RoundedBox>
+            </>
+          )}
+          {hasBeard && (
+            <RoundedBox args={[0.24, 0.12, 0.16]} radius={0.04} smoothness={2} position={[0, 0.845, -0.075]}>
+              <meshStandardMaterial color={hairColor} roughness={1} />
+            </RoundedBox>
+          )}
+
+          {/* Face (front is -Z): brow, eyes, nose, mouth */}
+          <mesh position={[0, 1.0, -0.135]}>
+            <boxGeometry args={[0.2, 0.03, 0.03]} />
+            <meshStandardMaterial color={hairColor} roughness={1} />
+          </mesh>
+          <mesh position={[-0.065, 0.955, -0.142]}>
+            <boxGeometry args={[0.05, 0.045, 0.02]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[0.065, 0.955, -0.142]}>
+            <boxGeometry args={[0.05, 0.045, 0.02]} />
+            <meshBasicMaterial color="#ffffff" />
+          </mesh>
+          <mesh position={[-0.065, 0.953, -0.15]}>
+            <boxGeometry args={[0.022, 0.03, 0.012]} />
             <meshBasicMaterial color="#20140c" />
           </mesh>
-          <mesh position={[0.07, 0.92, -0.152]}>
-            <boxGeometry args={[0.05, 0.05, 0.02]} />
+          <mesh position={[0.065, 0.953, -0.15]}>
+            <boxGeometry args={[0.022, 0.03, 0.012]} />
             <meshBasicMaterial color="#20140c" />
           </mesh>
-          {/* Legs: thigh (skin) + sock + boot */}
-          <group ref={leftLegRef} position={[-0.13, 0.0, 0]}>
-            <RoundedBox castShadow args={[0.17, 0.28, 0.17]} radius={0.04} smoothness={2} position={[0, -0.18, 0]}>
-              <meshStandardMaterial color={skinTone} roughness={0.6} />
+          <mesh position={[0, 0.915, -0.15]}>
+            <boxGeometry args={[0.045, 0.06, 0.035]} />
+            <meshStandardMaterial color={skinTone} roughness={0.62} />
+          </mesh>
+          <mesh position={[0, 0.865, -0.142]}>
+            <boxGeometry args={[0.07, 0.016, 0.015]} />
+            <meshBasicMaterial color="#8a4a44" />
+          </mesh>
+
+          {/* Legs: hip → thigh → KNEE → shin/sock → boot.
+              The knee joint is what turns a stiff pendulum into a real stride. */}
+          <group ref={leftLegRef} position={[-0.12, 0.0, 0]}>
+            <RoundedBox castShadow args={[0.17, 0.26, 0.17]} radius={0.05} smoothness={3} position={[0, -0.15, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.62} />
             </RoundedBox>
-            <RoundedBox castShadow args={[0.17, 0.2, 0.18]} radius={0.04} smoothness={2} position={[0, -0.4, 0]}>
-              <meshStandardMaterial color={sockColor} roughness={0.8} />
-            </RoundedBox>
-            <RoundedBox castShadow args={[0.18, 0.09, 0.24]} radius={0.03} smoothness={2} position={[0, -0.5, -0.03]}>
-              <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.1} />
-            </RoundedBox>
+            <group ref={leftShinRef} position={[0, -0.28, 0]}>
+              <RoundedBox castShadow args={[0.16, 0.22, 0.17]} radius={0.045} smoothness={3} position={[0, -0.12, 0]}>
+                <meshStandardMaterial color={sockColor} roughness={0.85} />
+              </RoundedBox>
+              <RoundedBox args={[0.165, 0.04, 0.175]} radius={0.02} smoothness={2} position={[0, -0.02, 0]}>
+                <meshStandardMaterial color={accentColor} roughness={0.8} />
+              </RoundedBox>
+              <RoundedBox castShadow args={[0.17, 0.09, 0.25]} radius={0.035} smoothness={3} position={[0, -0.255, -0.04]}>
+                <meshStandardMaterial color="#141414" roughness={0.35} metalness={0.15} />
+              </RoundedBox>
+            </group>
           </group>
-          <group ref={rightLegRef} position={[0.13, 0.0, 0]}>
-            <RoundedBox castShadow args={[0.17, 0.28, 0.17]} radius={0.04} smoothness={2} position={[0, -0.18, 0]}>
-              <meshStandardMaterial color={skinTone} roughness={0.6} />
+          <group ref={rightLegRef} position={[0.12, 0.0, 0]}>
+            <RoundedBox castShadow args={[0.17, 0.26, 0.17]} radius={0.05} smoothness={3} position={[0, -0.15, 0]}>
+              <meshStandardMaterial color={skinTone} roughness={0.62} />
             </RoundedBox>
-            <RoundedBox castShadow args={[0.17, 0.2, 0.18]} radius={0.04} smoothness={2} position={[0, -0.4, 0]}>
-              <meshStandardMaterial color={sockColor} roughness={0.8} />
-            </RoundedBox>
-            <RoundedBox castShadow args={[0.18, 0.09, 0.24]} radius={0.03} smoothness={2} position={[0, -0.5, -0.03]}>
-              <meshStandardMaterial color="#141414" roughness={0.4} metalness={0.1} />
-            </RoundedBox>
+            <group ref={rightShinRef} position={[0, -0.28, 0]}>
+              <RoundedBox castShadow args={[0.16, 0.22, 0.17]} radius={0.045} smoothness={3} position={[0, -0.12, 0]}>
+                <meshStandardMaterial color={sockColor} roughness={0.85} />
+              </RoundedBox>
+              <RoundedBox args={[0.165, 0.04, 0.175]} radius={0.02} smoothness={2} position={[0, -0.02, 0]}>
+                <meshStandardMaterial color={accentColor} roughness={0.8} />
+              </RoundedBox>
+              <RoundedBox castShadow args={[0.17, 0.09, 0.25]} radius={0.035} smoothness={3} position={[0, -0.255, -0.04]}>
+                <meshStandardMaterial color="#141414" roughness={0.35} metalness={0.15} />
+              </RoundedBox>
+            </group>
           </group>
-          {/* Arms: sleeve (shirt + accent cuff) + forearm (skin) */}
-          <group ref={leftArmRef} position={[-0.34, 0.62, 0]}>
-            <RoundedBox castShadow args={[0.15, 0.24, 0.16]} radius={0.04} smoothness={2} position={[0, -0.12, 0]}>
-              <meshStandardMaterial color={shirtColor} roughness={0.75} />
+
+          {/* Arms: shoulder → sleeve → ELBOW → forearm */}
+          <group ref={leftArmRef} position={[-0.33, 0.66, 0]}>
+            <RoundedBox castShadow args={[0.15, 0.22, 0.16]} radius={0.05} smoothness={3} position={[0, -0.11, 0]}>
+              <meshStandardMaterial color={shirtColor} roughness={0.78} />
             </RoundedBox>
-            <RoundedBox args={[0.155, 0.05, 0.165]} radius={0.02} smoothness={2} position={[0, -0.235, 0]}>
+            <RoundedBox args={[0.155, 0.045, 0.165]} radius={0.02} smoothness={2} position={[0, -0.225, 0]}>
               <meshStandardMaterial color={accentColor} roughness={0.7} />
             </RoundedBox>
-            <RoundedBox castShadow args={[0.13, 0.22, 0.14]} radius={0.04} smoothness={2} position={[0, -0.36, 0]}>
-              <meshStandardMaterial color={skinTone} roughness={0.6} />
-            </RoundedBox>
+            <group ref={leftForeRef} position={[0, -0.25, 0]}>
+              <RoundedBox castShadow args={[0.125, 0.22, 0.135]} radius={0.045} smoothness={3} position={[0, -0.11, 0]}>
+                <meshStandardMaterial color={skinTone} roughness={0.62} />
+              </RoundedBox>
+            </group>
           </group>
-          <group ref={rightArmRef} position={[0.34, 0.62, 0]}>
-            <RoundedBox castShadow args={[0.15, 0.24, 0.16]} radius={0.04} smoothness={2} position={[0, -0.12, 0]}>
-              <meshStandardMaterial color={shirtColor} roughness={0.75} />
+          <group ref={rightArmRef} position={[0.33, 0.66, 0]}>
+            <RoundedBox castShadow args={[0.15, 0.22, 0.16]} radius={0.05} smoothness={3} position={[0, -0.11, 0]}>
+              <meshStandardMaterial color={shirtColor} roughness={0.78} />
             </RoundedBox>
-            <RoundedBox args={[0.155, 0.05, 0.165]} radius={0.02} smoothness={2} position={[0, -0.235, 0]}>
+            <RoundedBox args={[0.155, 0.045, 0.165]} radius={0.02} smoothness={2} position={[0, -0.225, 0]}>
               <meshStandardMaterial color={accentColor} roughness={0.7} />
             </RoundedBox>
-            <RoundedBox castShadow args={[0.13, 0.22, 0.14]} radius={0.04} smoothness={2} position={[0, -0.36, 0]}>
-              <meshStandardMaterial color={skinTone} roughness={0.6} />
-            </RoundedBox>
+            <group ref={rightForeRef} position={[0, -0.25, 0]}>
+              <RoundedBox castShadow args={[0.125, 0.22, 0.135]} radius={0.045} smoothness={3} position={[0, -0.11, 0]}>
+                <meshStandardMaterial color={skinTone} roughness={0.62} />
+              </RoundedBox>
+            </group>
           </group>
           {/* Controlled-player marker: solid yellow ring at the feet */}
           {controlled && (

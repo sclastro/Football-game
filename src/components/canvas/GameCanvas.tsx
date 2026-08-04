@@ -5,6 +5,8 @@ import { Field, FIELD_DIMENSIONS } from "@/game/entities/Field";
 import { Stadium } from "@/game/entities/Stadium";
 import { PitchDressing } from "@/game/entities/PitchDressing";
 import { Ball } from "@/game/entities/Ball";
+import { AimIndicator } from "@/game/entities/AimIndicator";
+import { PenaltyScene } from "@/game/entities/PenaltyScene";
 import { Goal } from "@/game/entities/Goal";
 import { PlayerEntity } from "@/game/entities/PlayerEntity";
 import { Benches } from "@/game/entities/Bench";
@@ -63,6 +65,8 @@ export function GameCanvas() {
       <Physics gravity={PHYSICS_CONFIG.gravity}>
         <Field />
         <Ball />
+        <AimIndicator />
+        <PenaltyScene />
         {/* Home attacks -Z, away attacks +Z. */}
         <Goal end={-1} lineZ={GOAL_LINE_Z} />
         <Goal end={1} lineZ={GOAL_LINE_Z} />
@@ -78,6 +82,7 @@ export function GameCanvas() {
               accentColor={home.accentColor}
               gkColor="#2e7d32"
               spawnPosition={homePosition(slot)}
+              slotIndex={i}
             />
           ) : null,
         )}
@@ -92,6 +97,7 @@ export function GameCanvas() {
               accentColor={away.accentColor}
               gkColor="#f57f17"
               spawnPosition={awayPosition(slot)}
+              slotIndex={i}
             />
           ) : null,
         )}

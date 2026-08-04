@@ -112,29 +112,35 @@ function resolvePass(
 
   const passer = passState.fromId ? playerRegistry.get(passState.fromId) : null;
 
+  // Only a pass the USER played may disturb the user's selection or control.
+  // An AI team-mate's pass completing must leave both untouched.
+  const byUser = passState.byUser;
+
   if (possessor.id === passState.targetId) {
     // Received cleanly by the intended team-mate.
-    if (passState.byUser && !possessor.isGoalkeeper) {
-      setControlledPlayer(possessor.id);
+    if (byUser) {
+      if (!possessor.isGoalkeeper) setControlledPlayer(possessor.id);
+      clearSelection();
     }
-    clearSelection();
     clearPass();
     return;
   }
 
   if (passer && possessor.team !== passer.team) {
     // Cut out by an opponent. Control stays with whoever played the pass.
-    if (passState.byUser) audio.intercept();
-    clearSelection();
+    if (byUser) {
+      audio.intercept();
+      clearSelection();
+    }
     clearPass();
     return;
   }
 
   // A different team-mate got there first — a deflection still belongs to your
   // team, so control follows to them.
-  if (passState.byUser && !possessor.isGoalkeeper) {
-    setControlledPlayer(possessor.id);
+  if (byUser) {
+    if (!possessor.isGoalkeeper) setControlledPlayer(possessor.id);
+    clearSelection();
   }
-  clearSelection();
   clearPass();
 }

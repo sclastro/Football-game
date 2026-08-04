@@ -37,10 +37,22 @@ export function Scoreboard() {
       <div className="mx-auto -mt-0.5 w-fit rounded-b-md bg-neutral-950/80 px-3 pb-0.5 pt-1 backdrop-blur-md">
         <span
           className={`text-xs font-bold tabular-nums tracking-widest ${
-            phase === "fulltime" ? "text-red-400" : "text-emerald-400"
+            phase === "fulltime"
+              ? "text-red-400"
+              : phase === "extraTime" || phase === "extraTimeBreak"
+                ? "text-amber-300"
+                : phase === "shootout" || phase === "shootoutIntro"
+                  ? "text-sky-300"
+                  : "text-emerald-400"
           }`}
         >
-          {phase === "fulltime" ? "FULL TIME" : `⏱ ${formatClock(clock)}`}
+          {phase === "fulltime"
+            ? "FULL TIME"
+            : phase === "shootout" || phase === "shootoutIntro"
+              ? "PENALTIES"
+              : phase === "extraTime" || phase === "extraTimeBreak"
+                ? `ET ⏱ ${formatClock(clock)}`
+                : `⏱ ${formatClock(clock)}`}
         </span>
       </div>
     </div>

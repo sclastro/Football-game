@@ -1,9 +1,18 @@
 import { useLayoutEffect } from "react";
 import * as THREE from "three";
 import { useThree, useFrame } from "@react-three/fiber";
-import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
+import {
+  useGameStore,
+  GOAL_FLASH_DURATION,
+  ENTRANCE_DURATION,
+} from "@/game/state/gameStore";
+import { ENTRANCE_LINEUP_END } from "./entranceSystem";
 import { playerRegistry, ballPosition } from "./worldRegistry";
 import { registerPicker } from "./playerPicking";
+import { FIELD_DIMENSIONS } from "@/game/entities/Field";
+
+const HALF_L = FIELD_DIMENSIONS.length / 2;
+const PENALTY_SPOT = FIELD_DIMENSIONS.penaltySpot;
 
 // Broadcast side camera: sits high on one long touchline (+X) and looks ACROSS
 // the pitch toward -X, so both goals and the far stand are in view. It pans
@@ -73,6 +82,45 @@ export function CameraRig() {
 
   useFrame((_, delta) => {
     const st = useGameStore.getState();
+
+    // Entrance: a low lateral sweep across the two lines, then pull back out to
+    // the broadcast position as the players break for kickoff.
+    if (st.phase === "entrance") {
+      const elapsed = ENTRANCE_DURATION - (st.entranceUntil - performance.now() / 1000);
+      if (elapsed < ENTRANCE_LINEUP_END) {
+        const sweep = THREE.MathUtils.clamp(elapsed / ENTRANCE_LINEUP_END, 0, 1);
+        // Track from one end of the line to the other, close and low.
+        _desiredPos.set(
+          THREE.MathUtils.lerp(-14, 14, sweep),
+          2.6,
+          14,
+        );
+        _desiredLook.set(THREE.MathUtils.lerp(-10, 10, sweep), 1.5, 0);
+      } else {
+        _desiredPos.set(SIDE_X, HEIGHT, 0);
+        _desiredLook.set(LOOK_X, LOOK_HEIGHT, 0);
+      }
+      const t = 1 - Math.exp(-2.6 * delta);
+      camera.position.lerp(_desiredPos, t);
+      _currentLook.lerp(_desiredLook, t);
+      camera.lookAt(_currentLook);
+      return;
+    }
+
+    // Shootout: sit behind the taker, looking down the pitch at the goal.
+    if (st.phase === "shootout" || st.phase === "shootoutIntro") {
+      const taker = st.shootout?.turn ?? "home";
+      const attackSign = taker === "home" ? -1 : 1;
+      const goalZ = attackSign * HALF_L;
+      const spotZ = goalZ - attackSign * PENALTY_SPOT;
+      _desiredPos.set(0, 4.2, spotZ - attackSign * -9);
+      _desiredLook.set(0, 1.4, goalZ);
+      const t = 1 - Math.exp(-CELEB_SMOOTH * delta);
+      camera.position.lerp(_desiredPos, t);
+      _currentLook.lerp(_desiredLook, t);
+      camera.lookAt(_currentLook);
+      return;
+    }
 
     // Celebration: frame the scorer (nearest scoring-team outfielder to the
     // ball) and dolly in over the stoppage.

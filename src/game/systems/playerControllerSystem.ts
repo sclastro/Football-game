@@ -15,6 +15,12 @@ const {
 const GRAVITY_ACCEL = 40;
 const GROUNDED_STICK_SPEED = -1;
 
+// Scratch objects shared by every controller — this runs 16 times a frame, so
+// nothing here may allocate.
+const _target = new THREE.Vector3();
+const _quat = new THREE.Quaternion();
+const _upAxis = new THREE.Vector3(0, 1, 0);
+
 function moveTowards(current: number, target: number, maxDelta: number) {
   if (Math.abs(target - current) <= maxDelta) return target;
   return current + Math.sign(target - current) * maxDelta;
@@ -80,17 +86,19 @@ export function usePlayerCharacterController(
     const maxSpeed = (input.sprinting ? sprintSpeed : walkSpeed) * speedScale;
     const hasInput = input.moveDirection.lengthSq() > 0.0001;
 
-    const targetVelocity = new THREE.Vector3(
-      input.moveDirection.x,
-      0,
-      input.moveDirection.y,
-    );
-    if (targetVelocity.lengthSq() > 0) targetVelocity.normalize().multiplyScalar(maxSpeed);
+    // Input magnitude is meaningful: the joystick's expo curve and the AI's
+    // arrival ramp both express "move this way, but only this fast" by
+    // shortening the vector. Clamp to 1 rather than normalising, or every input
+    // collapses to full speed and the controls stop being analog.
+    _target.set(input.moveDirection.x, 0, input.moveDirection.y);
+    const inputLen = _target.length();
+    if (inputLen > 1) _target.multiplyScalar(1 / inputLen);
+    _target.multiplyScalar(maxSpeed);
 
     const rate = hasInput ? acceleration : deceleration;
     const maxDelta = rate * delta;
-    velocity.current.x = moveTowards(velocity.current.x, targetVelocity.x, maxDelta);
-    velocity.current.z = moveTowards(velocity.current.z, targetVelocity.z, maxDelta);
+    velocity.current.x = moveTowards(velocity.current.x, _target.x, maxDelta);
+    velocity.current.z = moveTowards(velocity.current.z, _target.z, maxDelta);
 
     if (hasInput) {
       const targetYaw = Math.atan2(-input.moveDirection.x, -input.moveDirection.y);
@@ -119,11 +127,8 @@ export function usePlayerCharacterController(
       z: current.z + corrected.z,
     });
 
-    const quat = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 1, 0),
-      yaw.current,
-    );
-    rigidBody.setNextKinematicRotation(quat);
+    _quat.setFromAxisAngle(_upAxis, yaw.current);
+    rigidBody.setNextKinematicRotation(_quat);
 
     return Math.hypot(velocity.current.x, velocity.current.z);
   };
