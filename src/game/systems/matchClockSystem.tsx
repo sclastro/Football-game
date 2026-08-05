@@ -1,6 +1,13 @@
 import { useFrame } from "@react-three/fiber";
 import { useGameStore } from "@/game/state/gameStore";
-import { ballApi } from "./worldRegistry";
+import {
+  ballApi,
+  clearPass,
+  dribbleState,
+  playerRegistry,
+  type PlayerRecord,
+  type TeamSide,
+} from "./worldRegistry";
 import { FIELD_DIMENSIONS } from "@/game/entities/Field";
 import { GOAL_DIMENSIONS } from "@/game/entities/Goal";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
@@ -38,6 +45,58 @@ function reactToNearGoal(x: number, y: number, insideMouth: boolean): void {
     woodwork.lastAt = now;
     audio.nearMiss();
   }
+}
+
+/** How far inside the line the ball is placed for a restart. */
+const RESTART_INSET = 1.5;
+
+function clamp(v: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+/**
+ * Quick throw-in / goal kick. The ball is brought back just inside the line at
+ * the point it left, and the nearest player from the side that did NOT put it
+ * out is moved beside it to take the restart. Everyone else stays where they
+ * are — a full kickoff reset every time the ball went out made the match feel
+ * like it never got going.
+ */
+function restartFromTouch(outX: number, outZ: number): void {
+  const body = ballApi.body;
+  if (!body) return;
+
+  const x = clamp(outX, -HALF_W + RESTART_INSET, HALF_W - RESTART_INSET);
+  const z = clamp(outZ, -LINE_Z + RESTART_INSET, LINE_Z - RESTART_INSET);
+
+  body.setTranslation({ x, y: BALL_R + 0.05, z }, true);
+  body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+  body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+
+  // Award possession to the other side.
+  const awardTo: TeamSide =
+    dribbleState.lastTouchTeam === "home" ? "away" : "home";
+  let taker: PlayerRecord | null = null;
+  let bestD = Infinity;
+  for (const rec of playerRegistry.values()) {
+    if (rec.team !== awardTo || rec.isGoalkeeper) continue;
+    const d = Math.hypot(rec.position.x - x, rec.position.z - z);
+    if (d < bestD) {
+      bestD = d;
+      taker = rec;
+    }
+  }
+  if (taker?.rigidBody) {
+    // Stand them a stride off the ball, nudged toward the middle of the pitch.
+    const inward = x > 0 ? -1 : 1;
+    const tx = clamp(x + inward * 1.1, -HALF_W + 0.5, HALF_W - 0.5);
+    taker.rigidBody.setTranslation({ x: tx, y: 1, z }, true);
+    taker.position.set(tx, 1, z);
+  }
+
+  // The restart is a fresh touch, and any pass that was in flight is dead.
+  dribbleState.lastTouchTeam = awardTo;
+  dribbleState.protectedUntil = performance.now() / 1000 + 0.6;
+  clearPass();
 }
 
 /**
@@ -92,12 +151,13 @@ export function MatchClock() {
       }
 
       // Out of play: whole ball across a touchline, or across a goal line
-      // outside the goal mouth. Restart from the centre spot with both teams
-      // back in formation — a clean kickoff, just like after a goal.
+      // outside the goal mouth. Restart as a quick throw-in — the ball comes
+      // back just inside the line and the nearest opponent of whoever put it
+      // out steps up to it. Nobody else moves, so play never actually stops.
       const overTouchline = Math.abs(t.x) > HALF_W + BALL_R;
       const overGoalLine = Math.abs(t.z) > LINE_Z + BALL_R && !withinGoalMouth;
       if (overTouchline || overGoalLine || t.y < -2) {
-        state.kickoffReset();
+        restartFromTouch(t.x, t.z);
         audio.whistle();
       }
     } else if (state.phase === "goalStoppage") {

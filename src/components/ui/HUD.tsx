@@ -39,8 +39,8 @@ export function HUD() {
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4 font-sans text-white">
         <div className="max-w-2xl rounded-md bg-black/50 px-4 py-2 text-center text-sm">
           WASD move &middot; Shift sprint &middot; <b>click a team-mate</b> to
-          select, click again to take over &middot; E pass &middot; hold Space to
-          shoot
+          select, click again to take over &middot; <b>click yourself</b> to call
+          for the ball &middot; E pass &middot; hold Space to shoot
         </div>
       </div>
     </>

@@ -24,7 +24,23 @@ export interface AiState {
   runX: number
   runZ: number
   nextRunAt: number
+  /** What this player decided to do this frame — shown by the debug labels. */
+  behaviour: Behaviour
 }
+
+/** The named behaviours an AI player can be in. Also drives the intent labels. */
+export type Behaviour =
+  | 'idle'
+  | 'you'
+  | 'carry'
+  | 'chase'
+  | 'support'
+  | 'press'
+  | 'cover'
+  | 'intercept'
+  | 'shape'
+  | 'keeper'
+  | 'walkout'
 
 export interface PlayerRecord {
   id: string
@@ -55,9 +71,31 @@ export const ballApi: { body: RapierRigidBody | null } = { body: null }
  * their feet; `releaseUntil` briefly disables the carry after a kick so the
  * ball actually leaves.
  */
-export const dribbleState: { possessorId: string | null; releaseUntil: number } = {
+export const dribbleState: {
+  possessorId: string | null
+  releaseUntil: number
+  /**
+   * A player who has just received the ball is protected for a moment: nobody
+   * may tackle it off them. Without this, passes get poked away the instant
+   * they arrive and passing never feels like it worked.
+   */
+  protectedUntil: number
+  /** Which side touched the ball last, so out-of-play can be awarded properly. */
+  lastTouchTeam: TeamSide | null
+} = {
   possessorId: null,
   releaseUntil: 0,
+  protectedUntil: 0,
+  lastTouchTeam: null,
+}
+
+/**
+ * The user is asking for the ball. An AI team-mate carrying it will look to
+ * play them in while this is live.
+ */
+export const callState: { untilTime: number; byId: string | null } = {
+  untilTime: 0,
+  byId: null,
 }
 
 /**

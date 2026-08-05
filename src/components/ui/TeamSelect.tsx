@@ -107,8 +107,8 @@ export function TeamSelect() {
 
         <p className="mt-3 text-center text-xs leading-relaxed text-emerald-200/60">
           {controlMode === "keyboard"
-            ? "WASD move · Shift sprint · click a teammate to select, click again to take over · E pass · hold Space to shoot"
-            : "Left stick moves · tap a teammate to select (tap again to take over) · PASS sends it · drag SHOOT to aim and fire"}
+            ? "WASD move · Shift sprint · click a team-mate to select, again to take over · click yourself to call for the ball · E pass · hold Space to shoot"
+            : "Left stick moves · tap a team-mate to select (tap again to take over) · tap yourself to call for the ball · PASS sends it · drag SHOOT to aim and fire"}
         </p>
 
         <p className="mt-6 text-center text-sm text-white/50">

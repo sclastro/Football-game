@@ -3,10 +3,12 @@ import type { InputState } from './inputSystem'
 import {
   ballPosition,
   ballVelocity,
+  callState,
   dribbleState,
   passState,
   playerRegistry,
   type AiState,
+  type Behaviour,
   type PlayerRecord,
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
@@ -46,7 +48,14 @@ export function makeAiState(): AiState {
     diveUntil: 0,
     diveSide: 0,
     speedBoost: 1,
+    behaviour: 'idle',
   }
+}
+
+/** Tag the behaviour this player settled on, for the on-screen intent labels. */
+function tag(rec: PlayerRecord, behaviour: Behaviour, input: InputState): InputState {
+  rec.ai.behaviour = behaviour
+  return input
 }
 
 /** Current difficulty tuning; read once per call rather than per lookup. */
@@ -145,7 +154,9 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
     ai.nextJitterAt = now + 0.6 + Math.random() * 0.8
   }
 
-  if (rec.isGoalkeeper) return goalkeepBehaviour(rec, ball, input, tune)
+  if (rec.isGoalkeeper) {
+    return tag(rec, 'keeper', goalkeepBehaviour(rec, ball, input, tune))
+  }
 
   const possessor = dribbleState.possessorId
     ? playerRegistry.get(dribbleState.possessorId)
@@ -158,43 +169,43 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
     playerRegistry.get(passState.fromId)?.team !== rec.team &&
     interceptBehaviour(rec, ball, input, tune)
   ) {
-    return input
+    return tag(rec, 'intercept', input)
   }
 
   // --- Carrying it myself ---------------------------------------------------
   if (possessor?.id === rec.id) {
-    return carryBehaviour(rec, input)
+    return tag(rec, 'carry', carryBehaviour(rec, input))
   }
 
   // --- My team has it: make a run or hold shape -----------------------------
   if (possessor && possessor.team === rec.team) {
     // The user's selected team-mate always breaks into space.
     if (ai.makeRun || shouldSupport(rec, possessor)) {
-      return supportRunBehaviour(rec, possessor, input, now)
+      return tag(rec, 'support', supportRunBehaviour(rec, possessor, input, now))
     }
-    return holdShapeBehaviour(rec, ball, input, 0.1, 0.4, 4)
+    return tag(rec, 'shape', holdShapeBehaviour(rec, ball, input, 0.1, 0.4, 4))
   }
 
   // --- They have it: press with one, cover the lane with the next -----------
   if (possessor && possessor.team !== rec.team) {
     const presser = closestOfTeam(rec.team, ball)
     if (presser?.id === rec.id) {
-      return pressBehaviour(rec, possessor, input, tune)
+      return tag(rec, 'press', pressBehaviour(rec, possessor, input, tune))
     }
     const cover = closestOfTeam(rec.team, ball, presser?.id)
     if (cover?.id === rec.id) {
-      return coverLaneBehaviour(rec, possessor, input, tune)
+      return tag(rec, 'cover', coverLaneBehaviour(rec, possessor, input, tune))
     }
-    return holdShapeBehaviour(rec, ball, input, 0.2, 0.45, -2)
+    return tag(rec, 'shape', holdShapeBehaviour(rec, ball, input, 0.2, 0.45, -2))
   }
 
   // --- Loose ball -----------------------------------------------------------
   const chaser = closestOfTeam(rec.team, ball)
   if (chaser?.id === rec.id) {
-    return chaseBehaviour(rec, ball, input, tune, now)
+    return tag(rec, 'chase', chaseBehaviour(rec, ball, input, tune, now))
   }
   ai.reactUntil = 0
-  return holdShapeBehaviour(rec, ball, input, 0.15, 0.35, 0)
+  return tag(rec, 'shape', holdShapeBehaviour(rec, ball, input, 0.15, 0.35, 0))
 }
 
 // ---------------------------------------------------------------------------
@@ -522,32 +533,85 @@ function goalkeepBehaviour(
 // Kicking decisions
 // ---------------------------------------------------------------------------
 
-/** Inside this distance an AI carrier will have a go at goal. */
-const AI_SHOOT_RANGE = 20
+/** Inside this distance, and from a sane angle, an AI will shoot. */
+const AI_SHOOT_RANGE = 13
+/** Widest angle off the centre of goal an AI will shoot from, in radians. */
+const AI_SHOOT_ANGLE = 0.9
 /** Seconds between AI kicks, so they don't machine-gun the ball. */
 export const AI_KICK_COOLDOWN = 1.1
-const AI_CLEAR_POWER = 9
+/** An opponent this close counts as real pressure. */
+const PRESSURE_RADIUS = 2.6
+/** A passing lane is blocked if an opponent is within this of the line. */
+const LANE_CLEARANCE = 1.7
 
 const _goalTarget = new THREE.Vector3()
 
+/** Is an opponent close enough that this player has to do something now? */
+function underPressure(rec: PlayerRecord): boolean {
+  for (const other of playerRegistry.values()) {
+    if (other.team === rec.team) continue
+    if (
+      Math.hypot(
+        other.position.x - rec.position.x,
+        other.position.z - rec.position.z,
+      ) < PRESSURE_RADIUS
+    ) {
+      return true
+    }
+  }
+  return false
+}
+
+/** Is the straight line between two players free of opponents? */
+function laneIsClear(from: PlayerRecord, to: PlayerRecord): boolean {
+  const dx = to.position.x - from.position.x
+  const dz = to.position.z - from.position.z
+  const lenSq = dx * dx + dz * dz
+  if (lenSq < 0.5) return false
+  for (const other of playerRegistry.values()) {
+    if (other.team === from.team) continue
+    const t =
+      ((other.position.x - from.position.x) * dx +
+        (other.position.z - from.position.z) * dz) /
+      lenSq
+    if (t <= 0.05 || t >= 0.95) continue
+    const px = from.position.x + dx * t
+    const pz = from.position.z + dz * t
+    if (
+      Math.hypot(other.position.x - px, other.position.z - pz) < LANE_CLEARANCE
+    ) {
+      return false
+    }
+  }
+  return true
+}
+
 /**
- * Pick the best team-mate to pass to: furthest forward, most open, and not
- * miles away. Returns null when nobody is a sensible option.
+ * Pick a team-mate to pass to. Only returns someone the ball can actually reach
+ * — a blocked lane is no pass at all, which is what stops the AI firing the
+ * ball into a defender's shins every 1.1 seconds.
  */
-function chooseBestPassTarget(rec: PlayerRecord): PlayerRecord | null {
+function chooseBestPassTarget(
+  rec: PlayerRecord,
+  requireClearLane = true,
+): PlayerRecord | null {
   const dir = attackDir(rec)
   let best: PlayerRecord | null = null
   let bestScore = -Infinity
   for (const other of playerRegistry.values()) {
     if (other.team !== rec.team || other.id === rec.id || other.isGoalkeeper) continue
     const dist = rec.position.distanceTo(other.position)
-    if (dist < 3 || dist > 32) continue
+    if (dist < 3 || dist > 28) continue
+    if (requireClearLane && !laneIsClear(rec, other)) continue
     const progress = (rec.position.z - other.position.z) * dir
     const open = Math.min(
       nearestOpponentDistance(rec.team, other.position.x, other.position.z),
       12,
     )
-    const score = progress * 1.1 + open * 1.4 - dist * 0.25
+    // The user asking for the ball outweighs almost everything else.
+    const called = callState.byId === other.id && performance.now() / 1000 < callState.untilTime
+    const score =
+      progress * 1.1 + open * 1.4 - dist * 0.25 + (called ? 25 : 0)
     if (score > bestScore) {
       bestScore = score
       best = other
@@ -557,12 +621,15 @@ function chooseBestPassTarget(rec: PlayerRecord): PlayerRecord | null {
 }
 
 /**
- * What an AI player does with the ball when it is in kicking range. Returns
- * true if a kick was struck, so the caller can play the animation and start the
- * cooldown.
+ * What an AI player does with the ball when it is in kicking range.
  *
- * This lives here rather than in the entity so that every AI decision — move
- * and kick — is in one file.
+ * The guiding rule is: **keeping the ball is the default, kicking needs a
+ * reason.** The old version kicked whenever the cooldown allowed and the ball
+ * was in range, whose fallback was "blast it at the goal" — which is why loose
+ * balls used to fly off in random directions and out of play.
+ *
+ * Returns true if a kick was struck, so the caller can play the animation and
+ * start the cooldown.
  */
 export function computeAiKick(
   rec: PlayerRecord,
@@ -571,6 +638,7 @@ export function computeAiKick(
 ): boolean {
   const possessorId = dribbleState.possessorId
   const possessor = possessorId ? playerRegistry.get(possessorId) : null
+  const now = performance.now() / 1000
 
   // Discipline: NEVER kick a ball a team-mate is carrying. This is what used to
   // knock the ball off the user's own feet.
@@ -578,45 +646,74 @@ export function computeAiKick(
     return false
   }
 
+  // A player who has just received the ball is protected for a moment, so
+  // passes actually connect instead of being poked away on arrival.
+  if (possessor && possessor.id !== rec.id && now < dribbleState.protectedUntil) {
+    return false
+  }
+
   const tune = tuning()
   const goalZ = attackGoalZ(rec)
 
   if (possessor?.id === rec.id) {
-    // A keeper who has gathered the ball always distributes it — never dribbles
-    // out and never shoots.
+    // A keeper who has gathered the ball always distributes it.
     if (rec.isGoalkeeper) {
-      const receiver = chooseBestPassTarget(rec)
+      const receiver =
+        chooseBestPassTarget(rec) ?? chooseBestPassTarget(rec, false)
       if (receiver) return pass(receiver)
       _goalTarget.set(rec.ai.jitterX * 4, 0, goalZ)
-      return kick(_goalTarget, AI_CLEAR_POWER + 3, tune.shotScatter)
+      return kick(_goalTarget, 11, tune.shotScatter)
     }
 
-    const distToGoal = Math.hypot(rec.position.x, rec.position.z - goalZ)
-    if (distToGoal < AI_SHOOT_RANGE) {
-      // Aim for a corner of the goal rather than dead centre.
+    // Shoot only from a real shooting position: close enough AND from an angle
+    // where the goal is actually available.
+    const dz = Math.abs(rec.position.z - goalZ)
+    const distToGoal = Math.hypot(rec.position.x, dz)
+    const angle = Math.atan2(Math.abs(rec.position.x), Math.max(0.1, dz))
+    if (distToGoal < AI_SHOOT_RANGE && angle < AI_SHOOT_ANGLE) {
+      // Aim inside a post rather than at the corner flag.
       const side = Math.random() < 0.5 ? -1 : 1
-      _goalTarget.set(side * HALF_GOAL_W * 0.65, 0, goalZ)
-      const power = THREE.MathUtils.clamp(distToGoal * 0.75, 7, 15)
+      _goalTarget.set(side * HALF_GOAL_W * 0.55, 0, goalZ)
+      const power = THREE.MathUtils.clamp(distToGoal * 0.8, 8, 15)
       return kick(_goalTarget, power, tune.shotScatter)
     }
-    if (Math.random() < tune.passTendency) {
+
+    // Look for a pass: always when the user has called for it or we're being
+    // closed down, otherwise only sometimes so play still flows through runs.
+    const called =
+      callState.byId !== null && now < callState.untilTime
+    const pressured = underPressure(rec)
+    if (called || pressured || Math.random() < tune.passTendency) {
       const receiver = chooseBestPassTarget(rec)
       // An AI team-mate's pass must never yank control away from the player
       // the user is driving, so these are always registered as not-by-user.
       if (receiver) return pass(receiver)
     }
-    return false // keep dribbling; movement handles it
+
+    // Nothing on: keep the ball and run with it. Movement handles the rest.
+    return false
   }
 
   if (possessor && possessor.team !== rec.team) {
-    // Opponent is carrying: poke the ball away rather than punting it.
-    _goalTarget.set(0, 0, goalZ)
-    return kick(_goalTarget, 4, tune.shotScatter)
+    // Opponent is carrying: nick the ball off them. Aim the poke back toward
+    // our own half rather than hoofing it — a tackle is not a clearance.
+    _goalTarget.set(rec.position.x * 0.5, 0, rec.position.z + attackDir(rec) * 6)
+    return kick(_goalTarget, 3.5, tune.shotScatter)
   }
 
-  // Loose ball: clear or advance it toward the attacking end.
-  _goalTarget.set(rec.ai.jitterX * 2, 0, goalZ)
-  return kick(_goalTarget, AI_CLEAR_POWER, tune.shotScatter)
+  // --- Loose ball ----------------------------------------------------------
+  // The important change: DO NOT blast it. Take possession instead — just
+  // arriving is enough, the possession system will pick the ball up. Only
+  // actually strike it if we're under real pressure and can't settle.
+  if (!underPressure(rec)) return false
+
+  const outlet = chooseBestPassTarget(rec)
+  if (outlet) return pass(outlet)
+
+  // Genuinely stuck: clear it, but upfield-ish and at a controlled weight. The
+  // power clamp in aiKick keeps it inside the pitch.
+  _goalTarget.set(rec.ai.jitterX * 2, 0, rec.position.z + attackDir(rec) * 14)
+  return kick(_goalTarget, 8, tune.shotScatter)
 }
 
 /** The AI speed factor for the current difficulty. */

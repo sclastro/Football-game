@@ -1,7 +1,10 @@
 import { useGameStore } from '@/game/state/gameStore'
-import { playerRegistry } from './worldRegistry'
+import { callState, playerRegistry } from './worldRegistry'
 import { pickPlayerAtScreen } from './playerPicking'
 import { audio } from './audio'
+
+/** How long a shout for the ball stays live, in seconds. */
+const CALL_DURATION = 3
 
 /**
  * Who the user has currently singled out. A selected teammate breaks into space
@@ -41,7 +44,13 @@ export function tapPlayer(id: string): void {
 
   const store = useGameStore.getState()
   if (id === store.controlledPlayerId) {
+    // Tapping the player you're already driving is a shout for the ball: an AI
+    // team-mate carrying it will look to play you in. This is what stops you
+    // standing around with no way to get involved.
+    callState.byId = id
+    callState.untilTime = performance.now() / 1000 + CALL_DURATION
     clearSelection()
+    audio.select()
     return
   }
 

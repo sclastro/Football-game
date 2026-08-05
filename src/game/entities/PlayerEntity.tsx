@@ -6,6 +6,7 @@ import { Billboard, RoundedBox } from "@react-three/drei";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { PLAYER_INFO } from "@/game/data/rosters";
 import { numberTexture } from "@/game/utils/textures";
+import { IntentLabel } from "./IntentLabel";
 import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
@@ -40,6 +41,7 @@ import {
 import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
 import {
   ballApi,
+  callState,
   clearPass,
   dribbleState,
   playerRegistry,
@@ -244,9 +246,11 @@ export function PlayerEntity({
         true,
       );
       resetController(kickoffYaw);
-      // A restart voids any selection or pass that was in flight.
+      // A restart voids any selection, shout or pass that was in flight.
       clearSelection();
       clearPass();
+      callState.byId = null;
+      callState.untilTime = 0;
     });
     return unsub;
     // Spawn/yaw are fixed per entity; subscribe once for its lifetime.
@@ -332,7 +336,7 @@ export function PlayerEntity({
           const kicked = computeAiKick(
             record,
             (target, power, scatter) =>
-              aiKick(ball, record.position, target, power, scatter),
+              aiKick(ball, id, record.position, target, power, scatter),
             (receiver) => tryPassTo(ball, id, record.position, receiver, false),
           );
           if (kicked) {
@@ -649,6 +653,8 @@ export function PlayerEntity({
             <ringGeometry args={[0.6, 0.82, 32, 1, 0, Math.PI * 1.5]} />
             <meshBasicMaterial color="#22d3ee" transparent opacity={0.9} />
           </mesh>
+          {/* Debug read-out of what the AI is trying to do */}
+          <IntentLabel record={record} controlled={controlled} />
           {/* Floating number tag so players read clearly from the high camera */}
           <Billboard position={[0, 1.5, 0]}>
             <mesh>

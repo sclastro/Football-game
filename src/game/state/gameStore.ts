@@ -79,6 +79,7 @@ function shootoutDecided(s: ShootoutState): boolean {
 interface GameActions {
   setScreen: (screen: MatchState["screen"]) => void;
   setControlMode: (mode: ControlMode) => void;
+  toggleShowIntent: () => void;
   setDifficulty: (d: Difficulty) => void;
   setMatchDuration: (seconds: number) => void;
   /** Pick your nation and move on to squad selection. */
@@ -94,8 +95,6 @@ interface GameActions {
   scoreGoal: (side: Side) => void;
   /** After the goal stoppage: teleport everyone to kickoff spots and resume. */
   restartAfterGoal: () => void;
-  /** Ball went out of play: reset ball to centre + everyone to kickoff spots. */
-  kickoffReset: () => void;
   setControlledPlayer: (id: string) => void;
   /** Extra-time card acknowledged — start the extra period. */
   beginExtraTime: () => void;
@@ -115,6 +114,7 @@ const DEFAULT_SQUAD = autoPickSquad(DEFAULT_HOME_TEAM);
 const initialState: MatchState = {
   screen: "title",
   controlMode: "joystick",
+  showIntent: false,
   difficulty: "normal",
   matchDuration: DEFAULT_DURATION,
   homeTeamId: DEFAULT_HOME_TEAM,
@@ -140,6 +140,7 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
 
   setScreen: (screen) => set({ screen }),
   setControlMode: (mode) => set({ controlMode: mode }),
+  toggleShowIntent: () => set((s) => ({ showIntent: !s.showIntent })),
   setDifficulty: (difficulty) => set({ difficulty }),
   setMatchDuration: (matchDuration) => set({ matchDuration }),
 
@@ -222,8 +223,6 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
       resetNonce: s.resetNonce + 1,
       phase: s.extraTimeActive ? ("extraTime" as const) : ("live" as const),
     })),
-
-  kickoffReset: () => set((s) => ({ resetNonce: s.resetNonce + 1 })),
 
   setControlledPlayer: (id) => set({ controlledPlayerId: id }),
 

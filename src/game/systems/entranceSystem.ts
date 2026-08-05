@@ -53,6 +53,7 @@ export function computeEntranceInput(
     _target.set(rec.spawn[0], 0, rec.spawn[2])
   }
 
+  rec.ai.behaviour = 'walkout'
   steerToward(rec, _target, input)
   // Players spawn all over the pitch, so let anyone still a long way from their
   // mark jog rather than dawdle — otherwise the keeper is still walking when

@@ -18,6 +18,45 @@ function roundRect(
   ctx.closePath();
 }
 
+const labelCache = new Map<string, THREE.CanvasTexture>();
+
+/**
+ * A small text chip on a dark pill, used for the AI intent labels. Cached by
+ * text + colour, so the fixed set of behaviour names costs a handful of
+ * canvases for the whole match.
+ */
+export function labelTexture(text: string, color: string): THREE.CanvasTexture {
+  const key = `${text}|${color}`;
+  const cached = labelCache.get(key);
+  if (cached) return cached;
+
+  const w = 256;
+  const h = 96;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d")!;
+  ctx.clearRect(0, 0, w, h);
+
+  ctx.fillStyle = "rgba(10,10,12,0.82)";
+  roundRect(ctx, 6, 18, w - 12, h - 36, 26);
+  ctx.fill();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 5;
+  ctx.stroke();
+
+  ctx.fillStyle = color;
+  ctx.font = "bold 42px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text.toUpperCase(), w / 2, h / 2);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.anisotropy = 4;
+  labelCache.set(key, tex);
+  return tex;
+}
+
 const numberCache = new Map<string, THREE.CanvasTexture>();
 
 /** A squad-number badge: number on a team-coloured rounded square. Cached. */

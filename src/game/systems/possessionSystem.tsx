@@ -26,6 +26,11 @@ const CARRY_STIFFNESS = 12;
 const MAX_CARRY_SPEED = 13;
 /** A newcomer must be this much closer than the current carrier to steal it. */
 const STEAL_MARGIN = 0.5;
+/**
+ * Seconds a fresh receiver is protected from being tackled. Without this a pass
+ * gets poked away the instant it lands and passing never feels like it worked.
+ */
+const RECEIVE_PROTECT = 0.5;
 
 const _carry = new THREE.Vector3();
 const _vel = new THREE.Vector3();
@@ -60,7 +65,19 @@ export function PossessionController() {
     if (prev && ball && possessor && possessor.id !== prev.id) {
       const dPrev = prev.position.distanceTo(ball);
       const dNew = possessor.position.distanceTo(ball);
-      if (dPrev < POSSESS_RADIUS && dPrev - dNew < STEAL_MARGIN) possessor = prev;
+      const protectedNow =
+        performance.now() / 1000 < dribbleState.protectedUntil;
+      // A fresh receiver keeps the ball outright for their protected window;
+      // otherwise a newcomer needs to be clearly closer to take it.
+      if (dPrev < POSSESS_RADIUS && (protectedNow || dPrev - dNew < STEAL_MARGIN)) {
+        possessor = prev;
+      }
+    }
+    // A change of possessor is a new touch, and earns a short protected window
+    // so the ball can't be poked straight back off whoever just got it.
+    if (possessor && possessor.id !== dribbleState.possessorId) {
+      dribbleState.lastTouchTeam = possessor.team;
+      dribbleState.protectedUntil = performance.now() / 1000 + RECEIVE_PROTECT;
     }
     dribbleState.possessorId = possessor ? possessor.id : null;
 

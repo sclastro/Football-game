@@ -8,6 +8,7 @@ import {
   passState,
   type PlayerRecord,
 } from "./worldRegistry";
+import { FIELD_DIMENSIONS } from "@/game/entities/Field";
 
 /** Seconds the ball is free of carry control after a kick, so it can leave. */
 const RELEASE_TIME = 0.4;
@@ -23,7 +24,15 @@ const {
   passCooldown,
   loftThreshold,
   maxLiftImpulse,
+  mass,
+  linearDamping,
 } = PHYSICS_CONFIG.ball;
+
+/** Record which side touched the ball last, so out-of-play can be awarded. */
+function markTouch(id: string): void {
+  const rec = playerRegistry.get(id);
+  if (rec) dribbleState.lastTouchTeam = rec.team;
+}
 
 /**
  * Timestamp (s) of each player's last kick, so kicks can't be spammed. This is
@@ -105,17 +114,59 @@ export function tryShoot(
 
   ball.applyImpulse(_impulse, true);
   markKick(selfId);
+  markTouch(selfId);
   releaseBall();
   return true;
 }
 
 /**
- * AI kick: if the ball is in range, punt it toward a target point (usually the
- * opponent goal) with a bit of aim scatter so AI shots aren't laser-perfect.
+ * The impulse that carries the ball a given distance before damping stops it.
+ *
+ * Rapier applies linear damping as an exponential decay, so a ball launched at
+ * speed v decays as v·e^(−d·t) and total distance converges on v/d, where
+ * v = impulse/mass. With the current tuning an "impulse 9" clearance carries
+ * about 36 m — half the pitch — which is exactly why AI clearances used to sail
+ * straight out of play.
+ */
+function powerForDistance(distance: number): number {
+  return distance * mass * linearDamping;
+}
+
+/**
+ * Largest distance the ball can travel from `origin` along `dir` and still come
+ * to rest inside the pitch, with a margin so it never trickles over the line.
+ */
+function distanceToBoundary(
+  ox: number,
+  oz: number,
+  dx: number,
+  dz: number,
+): number {
+  const limitX = FIELD_DIMENSIONS.width / 2 - 2;
+  const limitZ = FIELD_DIMENSIONS.length / 2 - 2;
+  let best = Infinity;
+  if (Math.abs(dx) > 1e-4) {
+    best = Math.min(best, ((dx > 0 ? limitX : -limitX) - ox) / dx);
+  }
+  if (Math.abs(dz) > 1e-4) {
+    best = Math.min(best, ((dz > 0 ? limitZ : -limitZ) - oz) / dz);
+  }
+  return Math.max(0, best);
+}
+
+/**
+ * AI kick: if the ball is in range, strike it toward a target point with a bit
+ * of aim scatter so AI kicks aren't laser-perfect.
+ *
+ * Power is capped so the ball comes to rest INSIDE the pitch. Without this the
+ * AI's clearances routinely sailed straight out, which on top of a restart is
+ * what made matches feel like they never got going.
+ *
  * Returns true if the kick connected (for animation + cooldown).
  */
 export function aiKick(
   ball: RapierRigidBody,
+  selfId: string,
   playerPos: THREE.Vector3,
   target: THREE.Vector3,
   power: number,
@@ -131,9 +182,17 @@ export function aiKick(
   // Aim scatter: up to ~5 degrees either way at scatter = 1.
   _dir.applyAxisAngle(_up, (Math.random() - 0.5) * 0.18 * scatter);
 
-  _impulse.copy(_dir).multiplyScalar(power);
+  // Cap the power to what stays in play along the (post-scatter) direction.
+  const room = distanceToBoundary(t.x, t.z, _dir.x, _dir.z);
+  const capped = Math.min(power, powerForDistance(room));
+  // A kick with no room at all is pointless — don't take it.
+  if (capped < 1.5) return false;
+
+  _impulse.copy(_dir).multiplyScalar(capped);
   _impulse.y = 0; // AI keeps it on the deck
   ball.applyImpulse(_impulse, true);
+  markKick(selfId);
+  markTouch(selfId);
   releaseBall();
   return true;
 }
@@ -226,6 +285,7 @@ export function tryPassTo(
   _impulse.y = 0;
   ball.applyImpulse(_impulse, true);
   markKick(selfId);
+  markTouch(selfId);
   releaseBall();
 
   passState.active = true;
