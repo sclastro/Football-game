@@ -49,6 +49,7 @@ export function makeAiState(): AiState {
     nextRunAt: 0,
     diveUntil: 0,
     diveSide: 0,
+    diveHeight: 0.5,
     speedBoost: 1,
     behaviour: 'idle',
   }
@@ -481,6 +482,9 @@ function goalkeepBehaviour(
             // Commit to a dive: pose plus a burst of lateral pace.
             ai.diveUntil = now + 0.55
             ai.diveSide = Math.sign(dx)
+            // Height comes from where the ball will actually cross the line.
+            const crossY = ball.y + vel.y * timeToLine
+            ai.diveHeight = THREE.MathUtils.clamp(crossY / 2.2, 0, 1)
             ai.speedBoost = tune.gkDiveSpeed * 1.6
           }
           _target.set(
@@ -774,12 +778,18 @@ export function steerToward(
   rec: PlayerRecord,
   target: THREE.Vector3,
   input: InputState,
+  /**
+   * Scripted sequences (the walk-out, restarts) place players deliberately and
+   * must not be pulled back into their role band — a defender walking out to
+   * the halfway line is not out of position.
+   */
+  ignoreRoleBand = false,
 ): void {
   const halfW = HALF_W - 1
   const halfL = HALF_L + 2
   const clampedX = THREE.MathUtils.clamp(target.x, -halfW, halfW)
   const clampedZ = THREE.MathUtils.clamp(
-    clampToRoleBand(rec, target.z),
+    ignoreRoleBand ? target.z : clampToRoleBand(rec, target.z),
     -halfL,
     halfL,
   )

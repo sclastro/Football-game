@@ -1,11 +1,12 @@
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { useGameStore } from "@/game/state/gameStore";
+import { useGameStore, PENALTY_RESOLVE_TIME } from "@/game/state/gameStore";
 import { ballApi, playerRegistry } from "@/game/systems/worldRegistry";
+import { targetPoint } from "@/game/systems/penaltySystem";
 import { FIELD_DIMENSIONS } from "./Field";
 import { GOAL_DIMENSIONS } from "./Goal";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
-import type { PenaltyDirection, Side } from "@/game/state/types";
+import type { Side } from "@/game/state/types";
 
 const HALF_L = FIELD_DIMENSIONS.length / 2;
 const HALF_W = FIELD_DIMENSIONS.width / 2;
@@ -13,28 +14,23 @@ const SPOT_IN = FIELD_DIMENSIONS.penaltySpot;
 const HALF_GOAL_W = GOAL_DIMENSIONS.width / 2;
 const BALL_R = PHYSICS_CONFIG.ball.radius;
 
-/** How long the store holds the 'resolving' stage, in seconds. */
-const RESOLVE_TIME = 1.6;
-/** Ball is in flight between these fractions of the resolve window. */
-const FLIGHT_FROM = 0.12;
-const FLIGHT_TO = 0.62;
-
-/** Which way the ball goes for a direction, from the taker's point of view. */
-function offsetFor(dir: PenaltyDirection | null, facing: number): number {
-  if (dir === "left") return -HALF_GOAL_W * 0.68 * facing;
-  if (dir === "right") return HALF_GOAL_W * 0.68 * facing;
-  return 0;
-}
+/** Fractions of the resolve window. */
+const RUNUP_END = 0.34; // taker walks in and plants
+const STRIKE = 0.36; // contact
+const FLIGHT_END = 0.72; // ball reaches the line
+/** The keeper commits fractionally after contact — never before it. */
+const DIVE_START = 0.37;
+const DIVE_END = 0.64;
 
 /**
  * Scripted penalty presentation. During the shootout the match simulation is
- * idle, so this drives everything by hand: the ball sits on the spot, the taker
- * and keeper are placed, everyone else lines up on halfway, and the strike is
- * animated along a fixed arc.
+ * idle, so this drives everything by hand: the ball on the spot, a taker who
+ * runs up and strikes, a keeper who launches at the right moment, and a ball
+ * that follows whatever the outcome roll decided.
  *
  * Nothing here uses physics — a dynamic ball fighting a scripted animation is
- * exactly the kind of thing that looks broken, so the ball is pinned each frame
- * and its velocity zeroed.
+ * exactly the kind of thing that looks broken — so the ball is pinned each
+ * frame and its velocity zeroed.
  */
 export function PenaltyScene() {
   useFrame(() => {
@@ -48,58 +44,88 @@ export function PenaltyScene() {
     const attackSign = taker === "home" ? -1 : 1;
     const goalZ = attackSign * HALF_L;
     const spotZ = goalZ - attackSign * SPOT_IN;
-    // Screen-space "right" flips depending on which way the taker faces.
+    // Goal-mouth X is mirrored for the away end so "left" always means the
+    // taker's left.
     const facing = taker === "home" ? 1 : -1;
 
-    // --- Ball ---------------------------------------------------------------
-    let ballX = 0;
-    let ballY = BALL_R;
-    let ballZ = spotZ;
-
-    if (so && (so.stage === "resolving" || so.stage === "result")) {
+    // How far through the kick we are, 0..1.
+    let t = 0;
+    if (so && so.stage === "resolving") {
       const remaining = so.nextAt - performance.now() / 1000;
-      const elapsed =
-        so.stage === "resolving"
-          ? THREE.MathUtils.clamp(RESOLVE_TIME - remaining, 0, RESOLVE_TIME)
-          : RESOLVE_TIME;
-      const t = THREE.MathUtils.clamp(
-        (elapsed / RESOLVE_TIME - FLIGHT_FROM) / (FLIGHT_TO - FLIGHT_FROM),
+      t = THREE.MathUtils.clamp(
+        (PENALTY_RESOLVE_TIME - remaining) / PENALTY_RESOLVE_TIME,
         0,
         1,
       );
-      const targetX = offsetFor(so.shotDir, facing);
-      const targetY = so.shotDir === "centre" ? 0.5 : 1.0;
+    } else if (so && so.stage === "result") {
+      t = 1;
+    }
 
-      if (so.scored) {
-        // Flies past the keeper and into the net.
-        const endZ = goalZ - attackSign * -1.2; // just past the line
-        ballX = THREE.MathUtils.lerp(0, targetX, t);
-        ballZ = THREE.MathUtils.lerp(spotZ, endZ, t);
-        ballY = BALL_R + Math.sin(t * Math.PI * 0.85) * targetY;
+    const kick = so?.kick ?? null;
+
+    // --- Ball ---------------------------------------------------------------
+    let bx = 0;
+    let by = BALL_R;
+    let bz = spotZ;
+
+    if (kick && t > STRIKE) {
+      const aim = targetPoint(kick.shotDir, kick.shotHeight);
+      const targetX = aim.x * facing + kick.aimErrorX * facing;
+      const targetY = aim.y + kick.aimErrorY;
+      // 0..1 across the flight itself.
+      const f = THREE.MathUtils.clamp(
+        (t - STRIKE) / (FLIGHT_END - STRIKE),
+        0,
+        1,
+      );
+
+      if (kick.outcome === "saved") {
+        // Reaches the keeper's hands, then drops and rebounds out.
+        const meet = Math.min(f, 0.8) / 0.8;
+        const after = Math.max(0, f - 0.8) / 0.2;
+        bx = targetX * meet;
+        bz = THREE.MathUtils.lerp(spotZ, goalZ + attackSign * 0.3, meet);
+        by = BALL_R + targetY * meet;
+        // Parried away from goal and down.
+        bx += after * targetX * 0.5;
+        bz -= attackSign * after * 5;
+        by = Math.max(BALL_R, by - after * targetY * 0.8);
+      } else if (kick.outcome === "post") {
+        // Cannons off the upright and away.
+        const postX = Math.sign(targetX || 1) * HALF_GOAL_W;
+        const meet = Math.min(f, 0.7) / 0.7;
+        const after = Math.max(0, f - 0.7) / 0.3;
+        bx = postX * meet + after * postX * 0.4;
+        bz =
+          THREE.MathUtils.lerp(spotZ, goalZ, meet) - attackSign * after * 8;
+        by = BALL_R + targetY * meet * (1 - after * 0.5);
+      } else if (kick.outcome === "wide") {
+        // Misses the frame entirely and carries on past the line.
+        const endZ = goalZ - attackSign * -3;
+        bx = THREE.MathUtils.lerp(0, targetX, f);
+        bz = THREE.MathUtils.lerp(spotZ, endZ, f);
+        by = BALL_R + targetY * f;
       } else {
-        // Saved: reaches the keeper, then rebounds back out.
-        const meet = Math.min(t, 0.72) / 0.72;
-        const rebound = Math.max(0, t - 0.72) / 0.28;
-        ballX = THREE.MathUtils.lerp(0, targetX, meet) * (1 - rebound * 0.45);
-        ballZ =
-          THREE.MathUtils.lerp(spotZ, goalZ, meet) +
-          attackSign * -1 * rebound * 6;
-        ballY = BALL_R + Math.sin(meet * Math.PI * 0.85) * targetY * (1 - rebound * 0.5);
+        // Goal: past the keeper and into the net.
+        const endZ = goalZ - attackSign * -1.4;
+        bx = THREE.MathUtils.lerp(0, targetX, f);
+        bz = THREE.MathUtils.lerp(spotZ, endZ, f);
+        by = BALL_R + targetY * f;
       }
     }
 
-    body.setTranslation({ x: ballX, y: ballY, z: ballZ }, true);
+    body.setTranslation({ x: bx, y: by, z: bz }, true);
     body.setLinvel({ x: 0, y: 0, z: 0 }, true);
     body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
     // --- Players ------------------------------------------------------------
     const takerSquad = taker === "home" ? st.homeSquad : st.awaySquad;
     const keeperSide: Side = taker === "home" ? "away" : "home";
-    // Rotate the taker through the squad so it isn't the same player every kick.
     const outfield = takerSquad.filter((pid) => {
       const rec = playerRegistry.get(pid);
       return rec && !rec.isGoalkeeper;
     });
+    // Rotate the taker through the squad so it isn't the same player every kick.
     const takerId = outfield.length
       ? outfield[(so?.round ?? 0) % outfield.length]
       : null;
@@ -109,43 +135,60 @@ export function PenaltyScene() {
       const rb = rec.rigidBody;
       if (!rb) continue;
 
+      // --- The defending keeper --------------------------------------------
       if (rec.isGoalkeeper && rec.team === keeperSide) {
-        // The defending keeper on their line, diving once the kick is struck.
         let kx = 0;
-        if (so && (so.stage === "resolving" || so.stage === "result")) {
-          const remaining = so.nextAt - performance.now() / 1000;
-          const elapsed =
-            so.stage === "resolving"
-              ? THREE.MathUtils.clamp(RESOLVE_TIME - remaining, 0, RESOLVE_TIME)
-              : RESOLVE_TIME;
-          const dt = THREE.MathUtils.clamp(
-            (elapsed / RESOLVE_TIME - FLIGHT_FROM) / 0.4,
+        let dive = 0;
+        if (kick && t > DIVE_START) {
+          const d = THREE.MathUtils.clamp(
+            (t - DIVE_START) / (DIVE_END - DIVE_START),
             0,
             1,
           );
-          const ease = Math.sin(dt * Math.PI * 0.5);
-          kx = offsetFor(so.diveDir, facing) * ease;
-          rec.ai.diveUntil = performance.now() / 1000 + 0.2;
-          rec.ai.diveSide = Math.sign(offsetFor(so.diveDir, facing)) || 0;
+          // A late read starts the dive later and never fully extends — that's
+          // what "guessed right but couldn't get there" has to look like.
+          const commit = Math.sin(d * Math.PI * 0.5) * (0.55 + kick.diveTiming * 0.45);
+          const aim = targetPoint(kick.diveDir, kick.shotHeight);
+          kx = aim.x * facing * commit;
+          dive = commit;
         }
         rb.setTranslation({ x: kx, y: 1, z: goalZ + attackSign * -0.4 }, true);
         rec.position.set(kx, 1, goalZ + attackSign * -0.4);
+        // Feed the pose: side and how far through the dive we are. Height comes
+        // from the shot so the keeper reaches low, level or high.
+        rec.ai.diveSide = kick && kick.diveDir !== "centre" ? Math.sign(kx) || 0 : 0;
+        rec.ai.diveUntil =
+          dive > 0 ? performance.now() / 1000 + 0.25 : 0;
+        rec.ai.diveHeight = kick
+          ? kick.shotHeight === "low"
+            ? 0
+            : kick.shotHeight === "mid"
+              ? 0.5
+              : 1
+          : 0.5;
         continue;
       }
 
+      // --- The taker: run up, plant, strike ---------------------------------
       if (rec.id === takerId) {
-        // The taker, a couple of metres behind the ball.
-        const z = spotZ - attackSign * -2.2;
+        // Starts a few metres back and walks onto the ball.
+        const startZ = spotZ - attackSign * -4.2;
+        const plantZ = spotZ - attackSign * -1.1;
+        const walk = THREE.MathUtils.clamp(t / RUNUP_END, 0, 1);
+        const z = THREE.MathUtils.lerp(startZ, plantZ, walk);
         rb.setTranslation({ x: 0, y: 1, z }, true);
         rec.position.set(0, 1, z);
         continue;
       }
 
-      // Everyone else waits on the halfway line, arms folded.
+      // --- Everyone else waits on the halfway line --------------------------
       const x = ((watcher % 8) - 3.5) * 2.4;
       const z = (rec.team === "home" ? 1 : -1) * 2.5;
       watcher++;
-      rb.setTranslation({ x: THREE.MathUtils.clamp(x, -HALF_W + 2, HALF_W - 2), y: 1, z }, true);
+      rb.setTranslation(
+        { x: THREE.MathUtils.clamp(x, -HALF_W + 2, HALF_W - 2), y: 1, z },
+        true,
+      );
       rec.position.set(x, 1, z);
     }
   });

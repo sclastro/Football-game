@@ -11,13 +11,27 @@ class AudioEngine {
   private enabled = true;
 
   resume() {
-    if (!this.ctx) this.init();
+    const first = !this.ctx;
+    if (first) this.init();
     this.ctx?.resume();
+    // Ease the crowd in rather than slamming it on with the first click. A bed
+    // that appears at full volume the instant you press START reads as a glitch
+    // no matter how good the bed itself is.
+    if (first) this.fadeCrowdTo(AudioEngine.CROWD_BASE, 1.6);
+  }
+
+  private fadeCrowdTo(target: number, seconds: number) {
+    const ctx = this.ctx;
+    const crowd = this.crowd;
+    if (!ctx || !crowd) return;
+    crowd.gain.cancelScheduledValues(ctx.currentTime);
+    crowd.gain.setValueAtTime(crowd.gain.value, ctx.currentTime);
+    crowd.gain.linearRampToValueAtTime(target, ctx.currentTime + seconds);
   }
 
   setEnabled(on: boolean) {
     this.enabled = on;
-    if (this.crowd) this.crowd.gain.value = on ? 0.06 : 0;
+    this.fadeCrowdTo(on ? AudioEngine.CROWD_BASE : 0, 0.25);
     if (this.master) this.master.gain.value = on ? 0.9 : 0;
   }
 
@@ -46,35 +60,68 @@ class AudioEngine {
     delay.connect(wet).connect(master);
     this.reverbSend = delay;
 
-    // Pre-render two seconds of white noise for reuse.
-    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+    // Pre-render six seconds of white noise. Longer than the old two seconds so
+    // the loop point comes round far less often, and long enough that two
+    // sources started at different offsets never line up audibly.
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 6, ctx.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
     this.noiseBuffer = buf;
 
-    // Crowd ambience: a low rumble layer + a mid murmur layer, each looping,
-    // summed into one crowd gain the mute toggle controls.
+    // Crowd ambience.
+    //
+    // This used to be white noise through a bandpass at 820 Hz, which is
+    // literally the definition of hiss — it snapped on at full volume the
+    // instant you pressed START and sounded like radio static. A crowd is
+    // almost entirely low-frequency energy that swells and fades, so: filter
+    // hard, keep the mid layer to a whisper, and modulate it slowly.
     const crowd = ctx.createGain();
-    crowd.gain.value = this.enabled ? 0.06 : 0;
+    crowd.gain.value = 0; // faded in by resume(), never snapped on
     crowd.connect(master);
     this.crowd = crowd;
 
-    const layer = (freq: number, type: BiquadFilterType, gain: number) => {
+    const layer = (
+      freq: number,
+      type: BiquadFilterType,
+      gain: number,
+      offset: number,
+      q = 0.5,
+    ) => {
       const src = ctx.createBufferSource();
       src.buffer = buf;
       src.loop = true;
       const f = ctx.createBiquadFilter();
       f.type = type;
       f.frequency.value = freq;
-      f.Q.value = 0.6;
+      f.Q.value = q;
       const g = ctx.createGain();
       g.gain.value = gain;
       src.connect(f).connect(g).connect(crowd);
-      src.start();
+      // Offsetting each source hides the buffer's loop seam.
+      src.start(0, offset);
+      return g;
     };
-    layer(240, "lowpass", 0.7); // deep rumble
-    layer(820, "bandpass", 0.35); // mid crowd murmur
+
+    // Deep body of the crowd — this is nearly all of what you hear.
+    layer(300, "lowpass", 0.85, 0);
+    // A whisper of mid so it isn't pure rumble. Barely audible on its own.
+    layer(700, "lowpass", 0.1, 2.3);
+
+    // Slow breathing: two detuned LFOs so the swell never sounds mechanical.
+    const breathe = (rate: number, depth: number) => {
+      const lfo = ctx.createOscillator();
+      const lfoGain = ctx.createGain();
+      lfo.frequency.value = rate;
+      lfoGain.gain.value = depth;
+      lfo.connect(lfoGain).connect(crowd.gain);
+      lfo.start();
+    };
+    breathe(0.11, 0.018);
+    breathe(0.27, 0.009);
   }
+
+  /** Base level the crowd bed sits at between events. */
+  private static readonly CROWD_BASE = 0.055;
 
   private reverbSend: DelayNode | null = null;
 
@@ -246,11 +293,22 @@ class AudioEngine {
     const ctx = this.ctx;
     const crowd = this.crowd;
     if (!ctx || !crowd || !this.enabled) return;
-    const base = 0.06;
     crowd.gain.cancelScheduledValues(ctx.currentTime);
     crowd.gain.setValueAtTime(crowd.gain.value, ctx.currentTime);
     crowd.gain.linearRampToValueAtTime(peak, ctx.currentTime + seconds * 0.4);
-    crowd.gain.linearRampToValueAtTime(base, ctx.currentTime + seconds);
+    crowd.gain.linearRampToValueAtTime(
+      AudioEngine.CROWD_BASE,
+      ctx.currentTime + seconds,
+    );
+  }
+
+  /**
+   * A small, unprompted lift in the crowd — the murmur that runs round a ground
+   * when something nearly happens. Called on a loose timer during play so the
+   * stadium never sits at one flat level.
+   */
+  murmur() {
+    this.swell(AudioEngine.CROWD_BASE + 0.03 + Math.random() * 0.03, 2.5 + Math.random() * 2);
   }
 
   /** Referee whistle: two short high tones. */

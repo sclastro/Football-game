@@ -42,6 +42,7 @@ import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
 import { speedMultiplier } from "@/game/data/teamStrength";
 import {
   applyKickPose,
+  applyDivePose,
   KICK_DURATIONS,
   type KickKind,
   type KickRefs,
@@ -450,20 +451,26 @@ export function PlayerEntity({
       applyKickPose(kickKind.current, t, kickRefs);
     }
 
-    // Keeper dive: a full-length lateral lunge with the arms stretched out.
+    // Keeper dive: launch, extend, reach. Height comes from where the ball is
+    // actually going, so a low shot gets a grounded dive and a top-corner one
+    // gets full stretch.
     if (record.ai.diveUntil > nowSec) {
       const t = 1 - (record.ai.diveUntil - nowSec) / 0.55;
-      const extend = Math.sin(Math.min(1, t * 1.6) * Math.PI * 0.5);
-      const side = record.ai.diveSide;
-      if (leanRef.current) leanRef.current.rotation.z = side * 1.25 * extend;
-      if (group) group.position.y -= 0.45 * extend;
-      // Both arms reach toward the ball, legs trail behind.
-      if (leftArmRef.current) leftArmRef.current.rotation.set(0, 0, 2.6 * extend);
-      if (rightArmRef.current) rightArmRef.current.rotation.set(0, 0, -2.6 * extend);
-      if (leftLegRef.current) leftLegRef.current.rotation.set(-0.5 * extend, 0, 0);
-      if (rightLegRef.current) rightLegRef.current.rotation.set(0.5 * extend, 0, 0);
-      if (leftShinRef.current) leftShinRef.current.rotation.x = 0.3 * extend;
-      if (rightShinRef.current) rightShinRef.current.rotation.x = 0.3 * extend;
+      const extend = Math.sin(THREE.MathUtils.clamp(t * 1.6, 0, 1) * Math.PI * 0.5);
+      kickRefs.lean = leanRef.current;
+      kickRefs.leftLeg = leftLegRef.current;
+      kickRefs.rightLeg = rightLegRef.current;
+      kickRefs.leftShin = leftShinRef.current;
+      kickRefs.rightShin = rightShinRef.current;
+      kickRefs.leftArm = leftArmRef.current;
+      kickRefs.rightArm = rightArmRef.current;
+      const lift = applyDivePose(
+        record.ai.diveSide,
+        record.ai.diveHeight,
+        extend,
+        kickRefs,
+      );
+      if (group) group.position.y += lift;
       if (leftForeRef.current) leftForeRef.current.rotation.x = 0;
       if (rightForeRef.current) rightForeRef.current.rotation.x = 0;
     } else if (leanRef.current) {

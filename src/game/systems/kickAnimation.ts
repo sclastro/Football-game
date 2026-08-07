@@ -1,4 +1,4 @@
-import type * as THREE from 'three'
+import * as THREE from 'three'
 
 export type KickKind = 'shot' | 'pass' | 'trap'
 
@@ -85,6 +85,73 @@ function shotPose(t: number, refs: KickRefs): void {
   // Arms balance the swing: opposite arm forward, kicking-side arm back.
   leftArm?.rotation.set(-0.9 * Math.sin(t * Math.PI), 0, 0.5)
   rightArm?.rotation.set(0.7 * Math.sin(t * Math.PI), 0, -0.35)
+}
+
+/**
+ * Goalkeeper dive.
+ *
+ * `side` is -1/+1 for a dive, or 0 to stand tall and spread. `height` runs
+ * 0 (grounded, along the floor) → 0.5 (level) → 1 (full-stretch, airborne), and
+ * `extend` is 0 → 1 across the dive. Returns the vertical body offset the
+ * caller should apply, since a low dive drops and a high one leaves the ground.
+ */
+export function applyDivePose(
+  side: number,
+  height: number,
+  extend: number,
+  refs: KickRefs,
+): number {
+  const { lean, leftLeg, rightLeg, leftShin, rightShin, leftArm, rightArm } = refs
+
+  if (side === 0) {
+    // Staying central: plant, spread and make yourself big rather than dive.
+    const spread = extend
+    if (lean) {
+      lean.rotation.z = 0
+      lean.rotation.x = -0.12 * spread
+      lean.rotation.y = 0
+    }
+    // Arms up and out for a high ball, down and wide for a low one.
+    const armZ = THREE.MathUtils.lerp(1.1, 2.7, height)
+    leftArm?.rotation.set(0, 0, armZ * spread)
+    rightArm?.rotation.set(0, 0, -armZ * spread)
+    leftLeg?.rotation.set(0, 0, 0.45 * spread)
+    rightLeg?.rotation.set(0, 0, -0.45 * spread)
+    if (leftShin) leftShin.rotation.x = 0
+    if (rightShin) rightShin.rotation.x = 0
+    return height > 0.7 ? 0.2 * spread : 0
+  }
+
+  // A full dive: the body rotates onto its side and stretches out.
+  // Low dives lie almost flat along the ground; high ones stay more upright and
+  // lift off it.
+  const tilt = THREE.MathUtils.lerp(1.5, 0.85, height) * extend
+  if (lean) {
+    lean.rotation.z = side * tilt
+    lean.rotation.x = THREE.MathUtils.lerp(0.15, -0.2, height) * extend
+    lean.rotation.y = 0
+  }
+
+  // Leading arm reaches hard toward the ball; trailing arm follows across.
+  const reach = THREE.MathUtils.lerp(2.2, 2.9, height) * extend
+  if (side < 0) {
+    leftArm?.rotation.set(0, 0, reach)
+    rightArm?.rotation.set(0, 0, -reach * 0.45)
+  } else {
+    rightArm?.rotation.set(0, 0, -reach)
+    leftArm?.rotation.set(0, 0, reach * 0.45)
+  }
+
+  // Legs trail behind the dive, tucked slightly for a low one.
+  const trail = 0.55 * extend
+  leftLeg?.rotation.set(-trail, 0, side * 0.3 * extend)
+  rightLeg?.rotation.set(trail, 0, side * 0.3 * extend)
+  const tuck = THREE.MathUtils.lerp(0.5, 0.1, height) * extend
+  if (leftShin) leftShin.rotation.x = tuck
+  if (rightShin) rightShin.rotation.x = tuck
+
+  // Low dives drop toward the turf; high dives get airborne.
+  return THREE.MathUtils.lerp(-0.55, 0.45, height) * extend
 }
 
 /**

@@ -1,6 +1,23 @@
 import { useGameStore, SHOOTOUT_KICKS, shootoutGoals } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
-import type { PenaltyDirection } from "@/game/state/types";
+import type { PenaltyDirection, PenaltyOutcome } from "@/game/state/types";
+
+/** What to shout when a kick resolves, from the user's point of view. */
+function outcomeLabel(
+  outcome: PenaltyOutcome,
+  userWasShooting: boolean,
+): string {
+  switch (outcome) {
+    case "goal":
+      return "GOAL!";
+    case "post":
+      return "OFF THE POST!";
+    case "wide":
+      return userWasShooting ? "MISSED!" : "THEY MISSED!";
+    case "saved":
+      return userWasShooting ? "SAVED!" : "SAVED BY YOU!";
+  }
+}
 
 const DIRECTIONS: { dir: PenaltyDirection; label: string; glyph: string }[] = [
   { dir: "left", label: "Left", glyph: "◀" },
@@ -106,13 +123,13 @@ export function ShootoutOverlay() {
           </div>
         )}
 
-        {so.stage === "result" && (
+        {so.stage === "result" && so.kick && (
           <div
             className={`text-4xl font-black tracking-tight drop-shadow ${
-              so.scored ? "text-emerald-400" : "text-red-400"
+              so.kick.outcome === "goal" ? "text-emerald-400" : "text-red-400"
             }`}
           >
-            {so.scored ? "GOAL!" : shooting ? "SAVED!" : "SAVED BY YOU!"}
+            {outcomeLabel(so.kick.outcome, shooting)}
           </div>
         )}
       </div>

@@ -1,6 +1,9 @@
-import { useMemo } from "react";
+import { useMemo, useRef } from "react";
 import * as THREE from "three";
+import { useFrame } from "@react-three/fiber";
 import { FIELD_DIMENSIONS } from "./Field";
+import { TEAMS } from "@/game/data/teams";
+import { useGameStore } from "@/game/state/gameStore";
 
 const { width, length } = FIELD_DIMENSIONS;
 
@@ -48,12 +51,82 @@ function buildSide(
   return people;
 }
 
+/**
+ * Waving flags dotted through the crowd, tinted to the two teams' colours.
+ *
+ * A sparse scatter reads far better than one flag per seat: it looks like
+ * supporters holding them up rather than bunting. They wave on a per-flag phase
+ * so the stand ripples instead of flapping in unison.
+ */
+function CrowdFlags({
+  people,
+  homeColor,
+  awayColor,
+}: {
+  people: Person[];
+  homeColor: string;
+  awayColor: string;
+}) {
+  const meshRef = useRef<THREE.InstancedMesh>(null);
+
+  // One flag every ~14th spectator, with a stable random phase each.
+  const flags = useMemo(() => {
+    const out: { position: [number, number, number]; phase: number; home: boolean }[] =
+      [];
+    for (let i = 0; i < people.length; i += 14) {
+      const p = people[i];
+      out.push({
+        position: [p.position[0], p.position[1] + 1.1, p.position[2]],
+        phase: Math.random() * Math.PI * 2,
+        home: Math.random() < 0.5,
+      });
+    }
+    return out;
+  }, [people]);
+
+  const dummy = useMemo(() => new THREE.Object3D(), []);
+  const colorRef = useRef(false);
+
+  useFrame(({ clock }) => {
+    const mesh = meshRef.current;
+    if (!mesh) return;
+    const t = clock.elapsedTime;
+    for (let i = 0; i < flags.length; i++) {
+      const f = flags[i];
+      dummy.position.set(...f.position);
+      // Rock side to side and twist, like a flag being waved overhead.
+      dummy.rotation.set(0, Math.sin(t * 2 + f.phase) * 0.5, Math.sin(t * 3 + f.phase) * 0.35);
+      dummy.updateMatrix();
+      mesh.setMatrixAt(i, dummy.matrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
+
+    // Colours only need writing once — they never change during a match.
+    if (!colorRef.current) {
+      const home = new THREE.Color(homeColor);
+      const away = new THREE.Color(awayColor);
+      flags.forEach((f, i) => mesh.setColorAt(i, f.home ? home : away));
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      colorRef.current = true;
+    }
+  });
+
+  return (
+    <instancedMesh ref={meshRef} args={[undefined, undefined, flags.length]}>
+      <planeGeometry args={[0.85, 0.55]} />
+      <meshStandardMaterial side={THREE.DoubleSide} toneMapped={false} />
+    </instancedMesh>
+  );
+}
+
 /** Tiered stadium bowl: raked decks, roofs, and an instanced crowd (bodies + heads). */
 export function Stadium() {
   const halfW = width / 2 + MARGIN;
   const halfL = length / 2 + MARGIN;
   const deckDepth = ROWS * ROW_DEPTH + 1.5;
   const topH = FRONT_H + ROWS * ROW_RISE;
+  const homeColor = TEAMS[useGameStore((s) => s.homeTeamId)].kitColor;
+  const awayColor = TEAMS[useGameStore((s) => s.awayTeamId)].kitColor;
 
   const people = useMemo(() => {
     const perLong = Math.floor((length + 8) / SPACING);
@@ -141,6 +214,12 @@ export function Stadium() {
       <Stand cx={-backW} cz={0} along={length + 10} horizontal />
       <Stand cx={0} cz={backL} along={width + 10} horizontal={false} />
       <Stand cx={0} cz={-backL} along={width + 10} horizontal={false} />
+
+      <CrowdFlags
+        people={people}
+        homeColor={homeColor}
+        awayColor={awayColor}
+      />
 
       {/* Crowd */}
       <instancedMesh ref={bodyRef} args={[undefined, undefined, people.length]}>

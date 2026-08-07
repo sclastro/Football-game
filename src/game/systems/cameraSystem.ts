@@ -107,14 +107,24 @@ export function CameraRig() {
       return;
     }
 
-    // Shootout: sit behind the taker, looking down the pitch at the goal.
+    // Shootout: a wide diagonal from behind and to one side of the taker, so
+    // the net, the goal frame and the taker are all in frame at once — and so
+    // the shot's direction can't be read off the camera before it's struck.
     if (st.phase === "shootout" || st.phase === "shootoutIntro") {
       const taker = st.shootout?.turn ?? "home";
       const attackSign = taker === "home" ? -1 : 1;
       const goalZ = attackSign * HALF_L;
       const spotZ = goalZ - attackSign * PENALTY_SPOT;
-      _desiredPos.set(0, 4.2, spotZ - attackSign * -9);
-      _desiredLook.set(0, 1.4, goalZ);
+      // Offset to the side rather than dead centre. The side alternates with the
+      // round so consecutive kicks don't look identical.
+      const side = (st.shootout?.round ?? 0) % 2 === 0 ? 1 : -1;
+      _desiredPos.set(
+        side * 11,
+        5.6,
+        spotZ - attackSign * -13,
+      );
+      // Look at a point just in front of the goal line, between spot and net.
+      _desiredLook.set(side * 1.5, 1.5, goalZ + attackSign * -1.5);
       const t = 1 - Math.exp(-CELEB_SMOOTH * delta);
       camera.position.lerp(_desiredPos, t);
       _currentLook.lerp(_desiredLook, t);

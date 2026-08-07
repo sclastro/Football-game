@@ -38,14 +38,25 @@ export function AudioController() {
       const stage = state.shootout?.stage;
       const prevStage = prev.shootout?.stage;
       if (stage === "result" && prevStage !== "result") {
-        if (state.shootout?.scored) audio.cheer();
+        if (state.shootout?.kick?.outcome === "goal") audio.cheer();
         else audio.groan();
       }
       if (stage === "choosing" && prevStage !== "choosing") {
         audio.swell(0.13, 3);
       }
     });
-    return unsub;
+
+    // Ambient life: an occasional ripple through the crowd while the ball is in
+    // play, so the ground doesn't sit at one flat level for the whole match.
+    const murmur = setInterval(() => {
+      const { phase } = useGameStore.getState();
+      if (phase === "live" || phase === "extraTime") audio.murmur();
+    }, 9000);
+
+    return () => {
+      unsub();
+      clearInterval(murmur);
+    };
   }, []);
 
   return null;

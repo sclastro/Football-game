@@ -17,8 +17,10 @@ export interface AiState {
   makeRun: boolean
   /** Perf-clock seconds until which a keeper's dive pose plays. */
   diveUntil: number
-  /** -1 dive left, +1 dive right, 0 none. */
+  /** -1 dive left, +1 dive right, 0 = stay central and spread. */
   diveSide: number
+  /** 0 = grounded dive, 0.5 = level, 1 = full-stretch high. */
+  diveHeight: number
   /** Extra speed multiplier (keepers get one while diving). */
   speedBoost: number
   /** Cached SupportRun destination, refreshed on a timer to avoid dithering. */

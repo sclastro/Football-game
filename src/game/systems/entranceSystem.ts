@@ -9,12 +9,17 @@ const HALF_W = FIELD_DIMENSIONS.width / 2
 
 /**
  * Entrance timeline, in seconds from the start of the walk-out:
- *   0.0 – 2.6  the teams file out from the touchline toward halfway
- *   2.6 – 5.0  they hold two lines while the camera sweeps across them
- *   5.0 – 7.0  they break for their kickoff positions
+ *   0.0 – 3.0  both teams walk in toward the centre circle
+ *   3.0 – 5.2  they hold two lines facing the camera for the sweep
+ *   5.2 – 7.0  they break and walk out to their kickoff positions
  */
-export const ENTRANCE_WALK_END = 2.6
-export const ENTRANCE_LINEUP_END = 5.0
+export const ENTRANCE_WALK_END = 3.0
+export const ENTRANCE_LINEUP_END = 5.2
+
+/** How far either side of the halfway line each team lines up. */
+const LINE_OFFSET = 2.8
+/** Gap between players in the line. */
+const LINE_SPACING = 2.5
 
 const _target = new THREE.Vector3()
 
@@ -24,10 +29,21 @@ export function entranceElapsed(): number {
   return ENTRANCE_DURATION - (st.entranceUntil - performance.now() / 1000)
 }
 
+/** Where a player stands in their team's line, centred on the halfway line. */
+function lineUpSpot(rec: PlayerRecord, out: THREE.Vector3): THREE.Vector3 {
+  const x = (rec.slotIndex - 3.5) * LINE_SPACING
+  const z = rec.team === 'home' ? LINE_OFFSET : -LINE_OFFSET
+  return out.set(THREE.MathUtils.clamp(x, -HALF_W + 3, HALF_W - 3), 0, z)
+}
+
 /**
  * Movement for one player during the walk-out. Uses exactly the same steering
  * and movement code as the match, so the normal walk cycle plays and nothing
  * needs hand-animating — the players simply have somewhere else to be.
+ *
+ * Role bands are bypassed here: a defender walking out to the halfway line for
+ * the line-up is not out of position, and without the bypass they would be
+ * dragged straight back toward their own box mid-ceremony.
  */
 export function computeEntranceInput(
   rec: PlayerRecord,
@@ -43,22 +59,19 @@ export function computeEntranceInput(
   input.moveDirection.set(0, 0)
 
   if (elapsed < ENTRANCE_LINEUP_END) {
-    // Two lines either side of halfway, evenly spaced across the pitch.
-    const spacing = 2.6
-    const x = (rec.slotIndex - 3.5) * spacing
-    const z = rec.team === 'home' ? 3.2 : -3.2
-    _target.set(THREE.MathUtils.clamp(x, -HALF_W + 3, HALF_W - 3), 0, z)
+    lineUpSpot(rec, _target)
   } else {
     // Break for the kickoff spots.
     _target.set(rec.spawn[0], 0, rec.spawn[2])
   }
 
   rec.ai.behaviour = 'walkout'
-  steerToward(rec, _target, input)
-  // Players spawn all over the pitch, so let anyone still a long way from their
-  // mark jog rather than dawdle — otherwise the keeper is still walking when
-  // the camera sweep reaches them.
-  if (elapsed < ENTRANCE_WALK_END && rec.position.distanceTo(_target) > 8) {
+  steerToward(rec, _target, input, true)
+
+  // Players spawn all over the pitch, so anyone still a long way from their
+  // mark jogs in — otherwise the keeper is still walking when the camera sweep
+  // reaches them. Once in the line, everyone walks.
+  if (elapsed < ENTRANCE_WALK_END && rec.position.distanceTo(_target) > 7) {
     input.sprinting = true
   }
   return input

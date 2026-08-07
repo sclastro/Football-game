@@ -44,21 +44,38 @@ export type Side = "home" | "away";
 /** Where a penalty is aimed, or which way the keeper dives. */
 export type PenaltyDirection = "left" | "centre" | "right";
 
+/** How high the taker struck it. Height decides how reachable a save is. */
+export type PenaltyHeight = "low" | "mid" | "high";
+
+/** What actually happened to a penalty. */
+export type PenaltyOutcome = "goal" | "saved" | "post" | "wide";
+
+export interface PenaltyKick {
+  /** Direction and height the taker went for. */
+  shotDir: PenaltyDirection;
+  shotHeight: PenaltyHeight;
+  /** Direction the keeper committed to. */
+  diveDir: PenaltyDirection;
+  /** 0..1 — how well the keeper timed it. Low means they went late or early. */
+  diveTiming: number;
+  outcome: PenaltyOutcome;
+  /** Sideways aim error in metres, so a wide shot misses by a believable amount. */
+  aimErrorX: number;
+  /** Vertical aim error in metres — positive is over the bar. */
+  aimErrorY: number;
+}
+
 export interface ShootoutState {
   /** 0-based kick index within the current set (0-4 in regulation). */
   round: number;
   turn: Side;
-  /** null = not taken yet, true = scored, false = saved. */
+  /** null = not taken yet, true = scored, false = saved/missed. */
   results: { home: (boolean | null)[]; away: (boolean | null)[] };
   suddenDeath: boolean;
   /** 'choosing' waits for the user, 'resolving' animates, 'result' shows it. */
   stage: "choosing" | "resolving" | "result";
-  /** Direction the taker went, once chosen. */
-  shotDir: PenaltyDirection | null;
-  /** Direction the keeper dived, once chosen. */
-  diveDir: PenaltyDirection | null;
-  /** Whether the last resolved kick was a goal. */
-  scored: boolean | null;
+  /** The kick being taken, once a direction has been chosen. */
+  kick: PenaltyKick | null;
   /** Wall-clock seconds (perf clock) at which the current stage advances. */
   nextAt: number;
 }

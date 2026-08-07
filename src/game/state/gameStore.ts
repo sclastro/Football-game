@@ -7,6 +7,10 @@ import type {
   Side,
 } from "./types";
 import type { Difficulty } from "@/game/data/difficulty";
+import {
+  aiPenaltyChoice,
+  resolvePenalty,
+} from "@/game/systems/penaltySystem";
 import { DEFAULT_HOME_TEAM, TEAM_IDS } from "@/game/data/teams";
 import { autoPickSquad, benchFor } from "@/game/data/rosters";
 
@@ -19,6 +23,8 @@ export const GOAL_FLASH_DURATION = 2.5;
 export const ENTRANCE_DURATION = 7;
 /** Kicks each side takes before sudden death. */
 export const SHOOTOUT_KICKS = 5;
+/** Seconds the run-up, strike and save animation plays for. */
+export const PENALTY_RESOLVE_TIME = 2.2;
 
 /** Extra time added when the score is level, keyed by regulation length. */
 const EXTRA_TIME: Record<number, number> = {
@@ -48,9 +54,7 @@ function freshShootout(): ShootoutState {
     },
     suddenDeath: false,
     stage: "choosing",
-    shotDir: null,
-    diveDir: null,
-    scored: null,
+    kick: null,
     nextAt: 0,
   };
 }
@@ -238,20 +242,23 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
     set((s) => {
       const so = s.shootout;
       if (!so || so.stage !== "choosing") return s;
-      const other: PenaltyDirection[] = ["left", "centre", "right"];
-      const random = other[Math.floor(Math.random() * other.length)];
       // Home is always the user's side: they shoot on their turn and keep goal
-      // on the opponent's turn.
-      const shotDir = so.turn === "home" ? dir : random;
-      const diveDir = so.turn === "home" ? random : dir;
+      // on the opponent's turn. Whichever role the user isn't playing is chosen
+      // by the AI, and everything else — height, timing, accuracy — is rolled.
+      const userShooting = so.turn === "home";
+      const aiDir = aiPenaltyChoice(s.difficulty);
+      const kick = resolvePenalty(
+        userShooting ? dir : aiDir,
+        userShooting ? aiDir : dir,
+        s.difficulty,
+        !userShooting,
+      );
       return {
         shootout: {
           ...so,
-          shotDir,
-          diveDir,
-          scored: shotDir !== diveDir,
+          kick,
           stage: "resolving" as const,
-          nextAt: now() + 1.6,
+          nextAt: now() + PENALTY_RESOLVE_TIME,
         },
       };
     }),
@@ -268,7 +275,7 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
           away: [...so.results.away],
         };
         while (results[so.turn].length <= so.round) results[so.turn].push(null);
-        results[so.turn][so.round] = so.scored;
+        results[so.turn][so.round] = so.kick?.outcome === "goal";
         return {
           shootout: {
             ...so,
@@ -301,9 +308,7 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
           round: nextRound,
           suddenDeath,
           stage: "choosing" as const,
-          shotDir: null,
-          diveDir: null,
-          scored: null,
+          kick: null,
           nextAt: 0,
         },
       };
