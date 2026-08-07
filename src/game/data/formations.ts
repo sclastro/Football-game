@@ -26,6 +26,37 @@ function slot(
 }
 
 /**
+ * How far up and back each role is allowed to roam, as fractions of the half
+ * length (-1 = own goal line, +1 = opponent's), split by whether the team has
+ * the ball.
+ *
+ * This is what actually makes a defender look like a defender: without a band,
+ * every outfielder drifts toward the ball and the shape dissolves into a swarm.
+ */
+export interface RoleBand {
+  /** Furthest forward this role goes while their team attacks. */
+  attackMax: number
+  /** Furthest back this role drops while their team attacks. */
+  attackMin: number
+  /** Furthest forward this role stays while defending. */
+  defendMax: number
+  /** Furthest back this role drops while defending. */
+  defendMin: number
+}
+
+export const ROLE_BANDS: Record<PlayerPosition, RoleBand> = {
+  // Keepers are handled entirely by their own behaviour; these are unused.
+  GK: { attackMax: -0.8, attackMin: -1, defendMax: -0.8, defendMin: -1 },
+  // Defenders push up to halfway at most, and drop onto their own box when
+  // defending. They never join the attack.
+  DEF: { attackMax: 0.02, attackMin: -0.75, defendMax: -0.25, defendMin: -0.92 },
+  // Midfielders link the two: they cover the widest band of the pitch.
+  MID: { attackMax: 0.62, attackMin: -0.45, defendMax: 0.2, defendMin: -0.7 },
+  // Forwards stay high. They press the nearest defender but never track back.
+  FWD: { attackMax: 0.94, attackMin: -0.1, defendMax: 0.72, defendMin: -0.35 },
+}
+
+/**
  * 8-a-side shape (GK + 3 DEF + 3 MID + 1 FWD), defined for a team that defends
  * the -Z goal. The away team mirrors these along Z.
  *

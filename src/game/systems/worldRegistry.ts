@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type { RapierRigidBody } from '@react-three/rapier'
+import type { PlayerPosition } from '@/game/state/types'
 
 export type TeamSide = 'home' | 'away'
 
@@ -45,6 +46,8 @@ export type Behaviour =
 export interface PlayerRecord {
   id: string
   team: TeamSide
+  /** Formation role, which decides how far up and back this player may roam. */
+  role: PlayerPosition
   isGoalkeeper: boolean
   /** Live world position, updated every frame by the entity. */
   position: THREE.Vector3
@@ -82,11 +85,14 @@ export const dribbleState: {
   protectedUntil: number
   /** Which side touched the ball last, so out-of-play can be awarded properly. */
   lastTouchTeam: TeamSide | null
+  /** Perf-clock seconds at which the current possessor won the ball. */
+  possessorSince: number
 } = {
   possessorId: null,
   releaseUntil: 0,
   protectedUntil: 0,
   lastTouchTeam: null,
+  possessorSince: 0,
 }
 
 /**
@@ -96,6 +102,19 @@ export const dribbleState: {
 export const callState: { untilTime: number; byId: string | null } = {
   untilTime: 0,
   byId: null,
+}
+
+/**
+ * Whether each side is currently attacking or defending. Drives the role bands,
+ * so a defender knows to drop when the ball is lost and push up when it's won.
+ * Updated with hysteresis by the possession controller so a scrappy loose ball
+ * doesn't make the whole shape flap back and forth.
+ */
+export type TeamPhase = 'attack' | 'defend'
+
+export const teamPhase: Record<TeamSide, TeamPhase> = {
+  home: 'defend',
+  away: 'defend',
 }
 
 /**

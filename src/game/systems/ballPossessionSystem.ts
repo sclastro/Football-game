@@ -9,6 +9,8 @@ import {
   type PlayerRecord,
 } from "./worldRegistry";
 import { FIELD_DIMENSIONS } from "@/game/entities/Field";
+import { shotMultiplier } from "@/game/data/teamStrength";
+import { useGameStore } from "@/game/state/gameStore";
 
 /** Seconds the ball is free of carry control after a kick, so it can leave. */
 const RELEASE_TIME = 0.4;
@@ -22,8 +24,9 @@ const {
   maxShotImpulse,
   maxChargeTime,
   passCooldown,
-  loftThreshold,
-  maxLiftImpulse,
+  accurateRange,
+  longRangePowerFloor,
+  longRangeScatter,
   mass,
   linearDamping,
 } = PHYSICS_CONFIG.ball;
@@ -32,6 +35,21 @@ const {
 function markTouch(id: string): void {
   const rec = playerRegistry.get(id);
   if (rec) dribbleState.lastTouchTeam = rec.team;
+}
+
+/** The nation id a player is representing. */
+function teamIdOf(rec: PlayerRecord): string {
+  const st = useGameStore.getState();
+  return rec.team === "home" ? st.homeTeamId : st.awayTeamId;
+}
+
+/** Distance from a player to the goal they are attacking. */
+export function distanceToAttackingGoal(rec: PlayerRecord): number {
+  const goalZ =
+    rec.team === "home"
+      ? -FIELD_DIMENSIONS.length / 2
+      : FIELD_DIMENSIONS.length / 2;
+  return Math.hypot(rec.position.x, rec.position.z - goalZ);
 }
 
 /**
@@ -71,15 +89,35 @@ export function horizontalDistanceToBall(
 }
 
 /**
- * How much lift a shot gets for a given 0..1 power. Below the threshold a shot
- * stays flat on the deck (short strikes remain easy to control, which is what
- * the ground-only rule was protecting); past it the arc ramps in quadratically,
- * so only a big pull sends it up and long.
+ * Distance falloff for shots. Inside `accurateRange` a strike is at full power
+ * and dead straight; past it, power bleeds away toward `longRangePowerFloor`
+ * and aim scatter grows. This is what makes working the ball into the box worth
+ * doing — a hopeful effort from 30 m should be a gamble, not the default play.
+ *
+ * `t` is 0 at the accurate range and 1 at the longest a shot can carry.
  */
-export function liftForPower(power: number): number {
-  if (power <= loftThreshold) return 0;
-  const t = (power - loftThreshold) / (1 - loftThreshold);
-  return maxLiftImpulse * t * t;
+export function shotFalloff(distanceToGoal: number): {
+  powerScale: number;
+  scatter: number;
+} {
+  const maxRange = travelDistance(maxShotImpulse);
+  if (distanceToGoal <= accurateRange || maxRange <= accurateRange) {
+    return { powerScale: 1, scatter: 0 };
+  }
+  const t = THREE.MathUtils.clamp(
+    (distanceToGoal - accurateRange) / (maxRange - accurateRange),
+    0,
+    1,
+  );
+  return {
+    powerScale: THREE.MathUtils.lerp(1, longRangePowerFloor, t),
+    scatter: longRangeScatter * t,
+  };
+}
+
+/** How far a ground ball carries for a given impulse before damping stops it. */
+export function travelDistance(impulse: number): number {
+  return impulse / mass / linearDamping;
 }
 
 /**
@@ -100,7 +138,6 @@ export function tryShoot(
   if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
 
   const power = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
-  const drive = THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, power);
 
   // The touch stick can aim independently of where the player is facing, so you
   // can strike to the right while sprinting left.
@@ -109,8 +146,25 @@ export function tryShoot(
   } else {
     facingVector(yaw, _dir);
   }
+
+  // Long-range efforts lose power and drift. Distance is measured to the goal
+  // being attacked, not to wherever the stick happens to point.
+  const self = playerRegistry.get(selfId);
+  const { powerScale, scatter } = shotFalloff(
+    self ? distanceToAttackingGoal(self) : 0,
+  );
+  if (scatter > 0) {
+    _dir.applyAxisAngle(_up, (Math.random() - 0.5) * 2 * scatter);
+  }
+
+  const drive =
+    THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, power) *
+    powerScale *
+    (self ? shotMultiplier(teamIdOf(self)) : 1);
   _impulse.copy(_dir).multiplyScalar(drive);
-  _impulse.y = liftForPower(power);
+  // Every shot stays on the deck. Lofted shots were tried and were far harder to
+  // read and control than they were worth.
+  _impulse.y = 0;
 
   ball.applyImpulse(_impulse, true);
   markKick(selfId);

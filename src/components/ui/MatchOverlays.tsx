@@ -154,8 +154,6 @@ export function SettingsMenu() {
   const [soundOn, setSoundOn] = useState(true);
   const controlMode = useGameStore((s) => s.controlMode);
   const setControlMode = useGameStore((s) => s.setControlMode);
-  const showIntent = useGameStore((s) => s.showIntent);
-  const toggleShowIntent = useGameStore((s) => s.toggleShowIntent);
   const backToMenu = useGameStore((s) => s.backToMenu);
 
   return (
@@ -196,13 +194,6 @@ export function SettingsMenu() {
           >
             <span>Sound</span>
             <span>{soundOn ? "🔊 On" : "🔈 Off"}</span>
-          </button>
-          <button
-            className="mb-2 flex w-full items-center justify-between rounded-md bg-white/10 px-2 py-1.5 text-xs font-semibold hover:bg-white/20"
-            onClick={toggleShowIntent}
-          >
-            <span>AI intent</span>
-            <span>{showIntent ? "👁 On" : "Off"}</span>
           </button>
           <button
             className="w-full rounded-md bg-white/10 px-2 py-1.5 text-xs font-semibold hover:bg-white/20"

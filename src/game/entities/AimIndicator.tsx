@@ -7,7 +7,7 @@ import {
   predictPath,
   PREVIEW_SAMPLES,
 } from "@/game/systems/aimPreview";
-import { liftForPower } from "@/game/systems/ballPossessionSystem";
+import { shotFalloff } from "@/game/systems/ballPossessionSystem";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { useGameStore } from "@/game/state/gameStore";
 import { isPlayingPhase } from "@/game/state/types";
@@ -85,9 +85,13 @@ export function AimIndicator() {
       (bar.material as THREE.MeshBasicMaterial).opacity = 0.35 + p * 0.4;
     }
 
-    // --- Predicted flight ---------------------------------------------------
-    const drive = THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, p);
-    impulse.set(aimState.dirX * drive, liftForPower(p), aimState.dirZ * drive);
+    // --- Predicted roll -----------------------------------------------------
+    // Apply the same distance falloff the real shot will, so the preview never
+    // promises range the strike won't deliver.
+    const { powerScale } = shotFalloff(aimState.distanceToGoal);
+    const drive =
+      THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, p) * powerScale;
+    impulse.set(aimState.dirX * drive, 0, aimState.dirZ * drive);
     const count = predictPath(
       aimState.originX,
       aimState.originY,

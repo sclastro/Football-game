@@ -79,7 +79,6 @@ function shootoutDecided(s: ShootoutState): boolean {
 interface GameActions {
   setScreen: (screen: MatchState["screen"]) => void;
   setControlMode: (mode: ControlMode) => void;
-  toggleShowIntent: () => void;
   setDifficulty: (d: Difficulty) => void;
   setMatchDuration: (seconds: number) => void;
   /** Pick your nation and move on to squad selection. */
@@ -114,7 +113,6 @@ const DEFAULT_SQUAD = autoPickSquad(DEFAULT_HOME_TEAM);
 const initialState: MatchState = {
   screen: "title",
   controlMode: "joystick",
-  showIntent: false,
   difficulty: "normal",
   matchDuration: DEFAULT_DURATION,
   homeTeamId: DEFAULT_HOME_TEAM,
@@ -140,7 +138,6 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
 
   setScreen: (screen) => set({ screen }),
   setControlMode: (mode) => set({ controlMode: mode }),
-  toggleShowIntent: () => set((s) => ({ showIntent: !s.showIntent })),
   setDifficulty: (difficulty) => set({ difficulty }),
   setMatchDuration: (matchDuration) => set({ matchDuration }),
 

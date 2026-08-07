@@ -6,7 +6,6 @@ import { Billboard, RoundedBox } from "@react-three/drei";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { PLAYER_INFO } from "@/game/data/rosters";
 import { numberTexture } from "@/game/utils/textures";
-import { IntentLabel } from "./IntentLabel";
 import { audio } from "@/game/systems/audio";
 import { useInputSystem, type InputState } from "@/game/systems/inputSystem";
 import { usePlayerCharacterController } from "@/game/systems/playerControllerSystem";
@@ -16,6 +15,7 @@ import {
   tryPassTo,
   aiKick,
   horizontalDistanceToBall,
+  distanceToAttackingGoal,
 } from "@/game/systems/ballPossessionSystem";
 import { selectionState, clearSelection } from "@/game/systems/selectionSystem";
 import { aimState } from "@/game/systems/aimPreview";
@@ -24,7 +24,7 @@ import {
   computeEntranceInput,
   entranceElapsed,
 } from "@/game/systems/entranceSystem";
-import { isPlayingPhase } from "@/game/state/types";
+import { isPlayingPhase, type PlayerPosition } from "@/game/state/types";
 import {
   computeAiInput,
   computeAiKick,
@@ -39,6 +39,13 @@ import {
   type CelebrationRefs,
 } from "@/game/systems/celebrations";
 import { useGameStore, GOAL_FLASH_DURATION } from "@/game/state/gameStore";
+import { speedMultiplier } from "@/game/data/teamStrength";
+import {
+  applyKickPose,
+  KICK_DURATIONS,
+  type KickKind,
+  type KickRefs,
+} from "@/game/systems/kickAnimation";
 import {
   ballApi,
   callState,
@@ -88,10 +95,11 @@ const AIM_SHOW_RANGE = PHYSICS_CONFIG.ball.kickRange * 1.8;
  */
 function updateAim(
   ball: RapierRigidBody,
-  playerPos: THREE.Vector3,
+  rec: PlayerRecord,
   yaw: number,
   input: InputState,
 ): void {
+  const playerPos = rec.position;
   const touchAiming = virtualInput.shootHeld;
   if (!touchAiming && !input.shootHeld) {
     aimState.active = false;
@@ -126,9 +134,8 @@ function updateAim(
   aimState.originX = t.x;
   aimState.originY = t.y;
   aimState.originZ = t.z;
+  aimState.distanceToGoal = distanceToAttackingGoal(rec);
 }
-
-const KICK_DURATION = 0.28; // seconds the kick leg-swing plays for
 
 interface PlayerEntityProps {
   id: string;
@@ -142,6 +149,8 @@ interface PlayerEntityProps {
   spawnPosition: [number, number, number];
   /** Formation slot index, used for the entrance line-up ordering. */
   slotIndex: number;
+  /** Formation role, which decides how far up and back this player roams. */
+  role: PlayerPosition;
 }
 
 /** Low-poly voxel-style character. Human-controlled when the store says so, AI otherwise. */
@@ -154,6 +163,7 @@ export function PlayerEntity({
   gkColor = "#37474f",
   spawnPosition,
   slotIndex,
+  role,
 }: PlayerEntityProps) {
   const controlled = useGameStore((s) => s.controlledPlayerId) === id;
 
@@ -176,9 +186,24 @@ export function PlayerEntity({
 
   const animPhase = useRef(0);
   const kickTimer = useRef(0);
+  const kickKind = useRef<KickKind>("shot");
+  /** Set once per reception so the trap plays a single time, not every frame. */
+  const trappedFor = useRef(0);
   const aiKickCooldown = useRef(0);
   /** Latched at the moment of a goal: this player performs the big routine. */
   const scoringLead = useRef(false);
+  const kickRefs = useMemo<KickRefs>(
+    () => ({
+      lean: null,
+      leftLeg: null,
+      rightLeg: null,
+      leftShin: null,
+      rightShin: null,
+      leftArm: null,
+      rightArm: null,
+    }),
+    [],
+  );
   const celebRefs = useMemo<CelebrationRefs>(
     () => ({
       group: null,
@@ -210,6 +235,7 @@ export function PlayerEntity({
     () => ({
       id,
       team,
+      role,
       isGoalkeeper,
       position: new THREE.Vector3(...spawnPosition),
       yaw: 0,
@@ -289,9 +315,15 @@ export function PlayerEntity({
     }
 
     // AI pace scales with the chosen difficulty; keepers get a burst mid-dive.
-    const speedScale = controlled
-      ? 1
-      : record.ai.speed * aiSpeedFactorNow() * record.ai.speedBoost;
+    // A stronger nation is a shade quicker — deliberately only a shade.
+    const teamPace = speedMultiplier(
+      team === "home"
+        ? useGameStore.getState().homeTeamId
+        : useGameStore.getState().awayTeamId,
+    );
+    const speedScale =
+      (controlled ? 1 : record.ai.speed * aiSpeedFactorNow() * record.ai.speedBoost) *
+      teamPace;
     const speed = updateController(delta, input, speedScale);
 
     // Mirror the physics body's kinematic transform onto the visual model.
@@ -311,9 +343,10 @@ export function PlayerEntity({
     const ball = ballApi.body;
     if (ball && active) {
       if (controlled) {
-        updateAim(ball, record.position, yaw.current, input);
+        updateAim(ball, record, yaw.current, input);
         if (tryShoot(ball, id, record.position, yaw.current, input)) {
-          kickTimer.current = KICK_DURATION;
+          kickTimer.current = KICK_DURATIONS.shot;
+          kickKind.current = "shot";
           audio.kick();
         } else if (input.passPressed) {
           // PASS always goes to the team-mate you singled out, if you picked
@@ -326,7 +359,8 @@ export function PlayerEntity({
               ? tryPassTo(ball, id, record.position, picked, true)
               : tryPass(ball, id, record.position, yaw.current, true);
           if (struck) {
-            kickTimer.current = KICK_DURATION;
+            kickTimer.current = KICK_DURATIONS.pass;
+            kickKind.current = "pass";
             audio.pass();
           }
         }
@@ -340,7 +374,11 @@ export function PlayerEntity({
             (receiver) => tryPassTo(ball, id, record.position, receiver, false),
           );
           if (kicked) {
-            kickTimer.current = KICK_DURATION;
+            // AI shots and passes both go through computeAiKick; a strike at
+            // goal is the long animation, anything else the short one.
+            const shooting = distanceToAttackingGoal(record) < 16;
+            kickKind.current = shooting ? "shot" : "pass";
+            kickTimer.current = KICK_DURATIONS[kickKind.current];
             aiKickCooldown.current = AI_KICK_COOLDOWN + Math.random() * 0.6;
           } else {
             aiKickCooldown.current = 0.15; // re-evaluate shortly
@@ -374,21 +412,43 @@ export function PlayerEntity({
     if (rightForeRef.current) rightForeRef.current.rotation.x = elbow;
 
     // Athletic forward lean while running (model faces -Z, so lean = -rot.x).
-    if (leanRef.current) leanRef.current.rotation.x = -speedFraction * 0.18;
-
-    // Kick animation: overrides the right leg with a sharp forward swing.
-    if (kickTimer.current > 0) {
-      kickTimer.current = Math.max(0, kickTimer.current - delta);
-      const t = 1 - kickTimer.current / KICK_DURATION;
-      const kickSwing = Math.sin(t * Math.PI) * -1.4;
-      if (rightLegRef.current) rightLegRef.current.rotation.x = kickSwing;
-      // Whip the shin through: bent on the backswing, straight through contact.
-      if (rightShinRef.current) {
-        rightShinRef.current.rotation.x = Math.max(0, 1 - t * 2.2) * 1.3;
-      }
+    // Y is reset here because the kick poses rotate the torso and would
+    // otherwise leave the player permanently twisted.
+    if (leanRef.current) {
+      leanRef.current.rotation.x = -speedFraction * 0.18;
+      leanRef.current.rotation.y = 0;
     }
 
     const nowSec = performance.now() / 1000;
+
+    // Receiving the ball plays a cushioned trap — but only once per reception,
+    // otherwise it would restart every frame the protection window is open.
+    if (
+      active &&
+      dribbleState.possessorId === id &&
+      nowSec < dribbleState.protectedUntil &&
+      trappedFor.current !== dribbleState.possessorSince &&
+      kickTimer.current <= 0
+    ) {
+      trappedFor.current = dribbleState.possessorSince;
+      kickKind.current = "trap";
+      kickTimer.current = KICK_DURATIONS.trap;
+    }
+
+    // Kick / pass / trap poses override the run cycle for their duration.
+    if (kickTimer.current > 0) {
+      kickTimer.current = Math.max(0, kickTimer.current - delta);
+      const total = KICK_DURATIONS[kickKind.current];
+      const t = THREE.MathUtils.clamp(1 - kickTimer.current / total, 0, 1);
+      kickRefs.lean = leanRef.current;
+      kickRefs.leftLeg = leftLegRef.current;
+      kickRefs.rightLeg = rightLegRef.current;
+      kickRefs.leftShin = leftShinRef.current;
+      kickRefs.rightShin = rightShinRef.current;
+      kickRefs.leftArm = leftArmRef.current;
+      kickRefs.rightArm = rightArmRef.current;
+      applyKickPose(kickKind.current, t, kickRefs);
+    }
 
     // Keeper dive: a full-length lateral lunge with the arms stretched out.
     if (record.ai.diveUntil > nowSec) {
@@ -653,8 +713,6 @@ export function PlayerEntity({
             <ringGeometry args={[0.6, 0.82, 32, 1, 0, Math.PI * 1.5]} />
             <meshBasicMaterial color="#22d3ee" transparent opacity={0.9} />
           </mesh>
-          {/* Debug read-out of what the AI is trying to do */}
-          <IntentLabel record={record} controlled={controlled} />
           {/* Floating number tag so players read clearly from the high camera */}
           <Billboard position={[0, 1.5, 0]}>
             <mesh>

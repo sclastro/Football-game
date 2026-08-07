@@ -10,6 +10,7 @@ import {
   nearestPlayerToBall,
   passState,
   playerRegistry,
+  teamPhase,
   type PlayerRecord,
 } from "./worldRegistry";
 import { clearSelection } from "./selectionSystem";
@@ -78,9 +79,11 @@ export function PossessionController() {
     if (possessor && possessor.id !== dribbleState.possessorId) {
       dribbleState.lastTouchTeam = possessor.team;
       dribbleState.protectedUntil = performance.now() / 1000 + RECEIVE_PROTECT;
+      dribbleState.possessorSince = performance.now() / 1000;
     }
     dribbleState.possessorId = possessor ? possessor.id : null;
 
+    updateTeamPhase(possessor);
     resolvePass(possessor, state.setControlledPlayer);
 
     // Carry the ball at the possessor's feet (unless a kick just released it).
@@ -107,6 +110,35 @@ export function PossessionController() {
   });
 
   return null;
+}
+
+/** A side must hold the ball this long before the shape commits to attacking. */
+const PHASE_SWITCH_DELAY = 0.35;
+const phaseTimer = { pendingFor: null as string | null, since: 0 };
+
+/**
+ * Set each side's attack/defend phase from who has the ball.
+ *
+ * The delay matters: a scrappy loose ball changes possessor several times a
+ * second, and without hysteresis the whole shape would flap up and down the
+ * pitch. A side only commits to attacking once it has genuinely settled on it.
+ */
+function updateTeamPhase(possessor: PlayerRecord | null): void {
+  const now = performance.now() / 1000;
+  const holder = possessor?.team ?? null;
+
+  if (holder !== phaseTimer.pendingFor) {
+    phaseTimer.pendingFor = holder;
+    phaseTimer.since = now;
+    return;
+  }
+  // A loose ball leaves the phases as they were — both sides keep their shape
+  // until somebody actually establishes possession.
+  if (!holder) return;
+  if (now - phaseTimer.since < PHASE_SWITCH_DELAY) return;
+
+  teamPhase.home = holder === "home" ? "attack" : "defend";
+  teamPhase.away = holder === "away" ? "attack" : "defend";
 }
 
 /**

@@ -83,6 +83,7 @@ export function GameCanvas() {
               gkColor="#2e7d32"
               spawnPosition={homePosition(slot)}
               slotIndex={i}
+              role={slot.role}
             />
           ) : null,
         )}
@@ -98,6 +99,7 @@ export function GameCanvas() {
               gkColor="#f57f17"
               spawnPosition={awayPosition(slot)}
               slotIndex={i}
+              role={slot.role}
             />
           ) : null,
         )}

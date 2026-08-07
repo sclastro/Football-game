@@ -68,8 +68,6 @@ export interface MatchState {
   screen: Screen;
   /** Input scheme (joystick is the on-screen touch control). */
   controlMode: ControlMode;
-  /** Debug: float each player's current AI intent above their head. */
-  showIntent: boolean;
   /** AI strength, chosen in the menu. */
   difficulty: Difficulty;
   /** Chosen match length in seconds. */

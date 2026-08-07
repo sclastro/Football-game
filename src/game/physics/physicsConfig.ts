@@ -18,22 +18,32 @@ export const PHYSICS_CONFIG = {
     mass: 0.45, // kg-ish; light enough to move, heavy enough not to fly off
     restitution: 0.32, // low bounce so ground balls stay down
     friction: 0.8,
-    linearDamping: 0.55, // air + rolling resistance so it slows to a stop
+    /**
+     * Rolling + air resistance. A ground ball travels `impulse / mass / damping`
+     * before coming to rest, so this number sets the whole game's shooting range.
+     * At the old 0.55 a full-power shot carried ~65 m on a 72 m pitch — you could
+     * score from against your own end wall, which made defending pointless.
+     */
+    linearDamping: 0.95,
     angularDamping: 0.8,
     /** Distance from player centre within which a shot/kick connects. */
     kickRange: 1.3,
-    /** Base impulse for a tapped shot; scales up to maxShotImpulse when charged. */
-    minShotImpulse: 5,
-    maxShotImpulse: 16,
+    /**
+     * Impulse range for a shot. With the damping above these give roughly a 9 m
+     * tap and a 30 m full strike: enough to beat a keeper from the edge of the
+     * box, nowhere near enough to reach the far goal from your own half.
+     */
+    minShotImpulse: 4,
+    maxShotImpulse: 13,
     /** Seconds of holding the shoot key to reach full power. */
     maxChargeTime: 0.8,
     /** Seconds you must wait between kicks (per player). */
     passCooldown: 0.6,
-    /**
-     * Shots below this 0..1 power stay flat on the deck — short strikes remain
-     * easy to control. Past it the arc ramps in quadratically up to maxLift.
-     */
-    loftThreshold: 0.45,
-    maxLiftImpulse: 4.5,
+    /** Shots taken from beyond this lose power and accuracy with distance. */
+    accurateRange: 16,
+    /** Fraction of power left at the very longest range. */
+    longRangePowerFloor: 0.62,
+    /** Extra aim scatter (radians, each way) at the very longest range. */
+    longRangeScatter: 0.13,
   },
 };

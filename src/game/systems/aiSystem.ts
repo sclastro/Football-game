@@ -7,11 +7,13 @@ import {
   dribbleState,
   passState,
   playerRegistry,
+  teamPhase,
   type AiState,
   type Behaviour,
   type PlayerRecord,
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
+import { ROLE_BANDS } from '@/game/data/formations'
 import { GOAL_DIMENSIONS } from '@/game/entities/Goal'
 import { DIFFICULTY, type DifficultyTuning } from '@/game/data/difficulty'
 import { useGameStore } from '@/game/state/gameStore'
@@ -541,6 +543,11 @@ const AI_SHOOT_ANGLE = 0.9
 export const AI_KICK_COOLDOWN = 1.1
 /** An opponent this close counts as real pressure. */
 const PRESSURE_RADIUS = 2.6
+/**
+ * Seconds a carrier keeps the ball before it will even consider a pass, unless
+ * it's being closed down or the user has called for it.
+ */
+const MIN_CARRY_TIME = 1.4
 /** A passing lane is blocked if an opponent is within this of the line. */
 const LANE_CLEARANCE = 1.7
 
@@ -674,16 +681,21 @@ export function computeAiKick(
       // Aim inside a post rather than at the corner flag.
       const side = Math.random() < 0.5 ? -1 : 1
       _goalTarget.set(side * HALF_GOAL_W * 0.55, 0, goalZ)
-      const power = THREE.MathUtils.clamp(distToGoal * 0.8, 8, 15)
+      // Enough to beat the keeper from this range without rocketing the ball
+      // into the next postcode — the pitch is only 72 m long.
+      const power = THREE.MathUtils.clamp(distToGoal * 0.55, 6, 11)
       return kick(_goalTarget, power, tune.shotScatter)
     }
 
-    // Look for a pass: always when the user has called for it or we're being
-    // closed down, otherwise only sometimes so play still flows through runs.
-    const called =
-      callState.byId !== null && now < callState.untilTime
+    // Take a real beat on the ball before looking to release it. Offloading the
+    // instant you win possession is what made every AI touch feel like a panic
+    // clearance; a settled carrier who runs at the defence reads far better.
+    const held = now - dribbleState.possessorSince
+    const called = callState.byId !== null && now < callState.untilTime
     const pressured = underPressure(rec)
-    if (called || pressured || Math.random() < tune.passTendency) {
+    const settled = held >= MIN_CARRY_TIME
+
+    if (called || pressured || (settled && Math.random() < tune.passTendency)) {
       const receiver = chooseBestPassTarget(rec)
       // An AI team-mate's pass must never yank control away from the player
       // the user is driving, so these are always registered as not-by-user.
@@ -724,9 +736,36 @@ export function aiSpeedFactorNow(): number {
 // ---------------------------------------------------------------------------
 
 /**
+ * Clamp a target to the band this player's role is allowed to occupy.
+ *
+ * Bands are authored for a team defending -Z (see ROLE_BANDS), so the away side
+ * — which defends +Z — reads them mirrored. A player already outside their band
+ * is pulled back toward it rather than frozen, so recovery looks like running
+ * back into position instead of a snap.
+ */
+function clampToRoleBand(rec: PlayerRecord, targetZ: number): number {
+  if (rec.isGoalkeeper) return targetZ
+  const band = ROLE_BANDS[rec.role]
+  const attacking = teamPhase[rec.team] === 'attack'
+  const lo = attacking ? band.attackMin : band.defendMin
+  const hi = attacking ? band.attackMax : band.defendMax
+
+  // Band space runs -1 (own goal line) → +1 (opponent's). Home attacks -Z so
+  // dir = -1 and band f maps to world -f·HALF_L; away attacks +Z so dir = +1
+  // and f maps to +f·HALF_L. Both are `f · dir · HALF_L`.
+  const dir = attackDir(rec) // -1 for home, +1 for away
+  const a = lo * dir * HALF_L
+  const b = hi * dir * HALF_L
+  return THREE.MathUtils.clamp(targetZ, Math.min(a, b), Math.max(a, b))
+}
+
+/**
  * Point the movement vector at a target. Within ARRIVE_RADIUS the input is
  * scaled down instead of cut dead, so players ease onto their mark rather than
  * oscillating around it.
+ *
+ * Every behaviour routes through here, so the role band is enforced in exactly
+ * one place rather than being re-checked in seven.
  */
 const ARRIVE_RADIUS = 2.2
 const STOP_RADIUS = 0.35
@@ -739,7 +778,11 @@ export function steerToward(
   const halfW = HALF_W - 1
   const halfL = HALF_L + 2
   const clampedX = THREE.MathUtils.clamp(target.x, -halfW, halfW)
-  const clampedZ = THREE.MathUtils.clamp(target.z, -halfL, halfL)
+  const clampedZ = THREE.MathUtils.clamp(
+    clampToRoleBand(rec, target.z),
+    -halfL,
+    halfL,
+  )
   const dx = clampedX - rec.position.x
   const dz = clampedZ - rec.position.z
   const dist = Math.hypot(dx, dz)

@@ -4,8 +4,6 @@ import {
   ballApi,
   clearPass,
   dribbleState,
-  playerRegistry,
-  type PlayerRecord,
   type TeamSide,
 } from "./worldRegistry";
 import { FIELD_DIMENSIONS } from "@/game/entities/Field";
@@ -56,10 +54,12 @@ function clamp(v: number, lo: number, hi: number) {
 
 /**
  * Quick throw-in / goal kick. The ball is brought back just inside the line at
- * the point it left, and the nearest player from the side that did NOT put it
- * out is moved beside it to take the restart. Everyone else stays where they
- * are — a full kickoff reset every time the ball went out made the match feel
- * like it never got going.
+ * the point it left, and possession is awarded to the side that did NOT put it
+ * out.
+ *
+ * Deliberately NOBODY is moved. Warping a player over to the ball looked wrong
+ * — the whole point of "out is out" is that play resumes from where it actually
+ * stopped, and the awarded side simply runs to it under normal AI.
  */
 function restartFromTouch(outX: number, outZ: number): void {
   const body = ballApi.body;
@@ -72,30 +72,16 @@ function restartFromTouch(outX: number, outZ: number): void {
   body.setLinvel({ x: 0, y: 0, z: 0 }, true);
   body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
-  // Award possession to the other side.
+  // Award possession to the other side. The head start comes from the head
+  // start they already have on the pitch, not from a teleport.
   const awardTo: TeamSide =
     dribbleState.lastTouchTeam === "home" ? "away" : "home";
-  let taker: PlayerRecord | null = null;
-  let bestD = Infinity;
-  for (const rec of playerRegistry.values()) {
-    if (rec.team !== awardTo || rec.isGoalkeeper) continue;
-    const d = Math.hypot(rec.position.x - x, rec.position.z - z);
-    if (d < bestD) {
-      bestD = d;
-      taker = rec;
-    }
-  }
-  if (taker?.rigidBody) {
-    // Stand them a stride off the ball, nudged toward the middle of the pitch.
-    const inward = x > 0 ? -1 : 1;
-    const tx = clamp(x + inward * 1.1, -HALF_W + 0.5, HALF_W - 0.5);
-    taker.rigidBody.setTranslation({ x: tx, y: 1, z }, true);
-    taker.position.set(tx, 1, z);
-  }
-
-  // The restart is a fresh touch, and any pass that was in flight is dead.
   dribbleState.lastTouchTeam = awardTo;
-  dribbleState.protectedUntil = performance.now() / 1000 + 0.6;
+  dribbleState.possessorId = null;
+
+  // Any pass that was in flight is dead, and briefly hold off tackles so the
+  // restart isn't instantly swarmed.
+  dribbleState.protectedUntil = performance.now() / 1000 + 0.4;
   clearPass();
 }
 

@@ -20,6 +20,8 @@ export const aimState = {
   originX: 0,
   originY: 0,
   originZ: 0,
+  /** Distance from the striker to the goal they attack, for the range falloff. */
+  distanceToGoal: 0,
 }
 
 /** How many points the predicted path is drawn with. */
