@@ -1,21 +1,28 @@
+import { useState } from "react";
 import { useGameStore, DURATION_OPTIONS } from "@/game/state/gameStore";
 import { TEAMS, TEAM_IDS } from "@/game/data/teams";
+import {
+  teamRating,
+  starPlayers,
+  teamStyle,
+} from "@/game/data/teamStrength";
 import {
   DIFFICULTY_IDS,
   DIFFICULTY_LABELS,
   type Difficulty,
 } from "@/game/data/difficulty";
 import type { ControlMode } from "@/game/state/types";
+import { Screen, SectionTitle, Headline, Pill, BackButton } from "./Screen";
+import { Flag } from "./Flag";
+import { StarIcon } from "./Icons";
 
-function readableText(hex: string): string {
-  const c = hex.replace("#", "");
-  const r = parseInt(c.slice(0, 2), 16);
-  const g = parseInt(c.slice(2, 4), 16);
-  const b = parseInt(c.slice(4, 6), 16);
-  return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? "#111" : "#fff";
-}
-
-/** Layer 2: pick your nation, match length, difficulty and control scheme. */
+/**
+ * Layer 2: pick your nation, match length, difficulty and control scheme.
+ *
+ * The nation grid used to be flat blocks of kit colour — a wall. These are
+ * cards: flag, name, rating, the squad's best-known names and a style label, so
+ * choosing a side is a decision rather than picking a colour.
+ */
 export function TeamSelect() {
   const setScreen = useGameStore((s) => s.setScreen);
   const chooseTeam = useGameStore((s) => s.chooseTeam);
@@ -27,49 +34,77 @@ export function TeamSelect() {
   const controlMode = useGameStore((s) => s.controlMode);
   const setControlMode = useGameStore((s) => s.setControlMode);
 
-  return (
-    <div className="absolute inset-0 overflow-auto bg-gradient-to-b from-emerald-950 via-emerald-900 to-neutral-950 font-sans text-white">
-      <div className="mx-auto flex min-h-full w-full max-w-2xl flex-col px-5 py-6">
-        <button
-          onClick={() => setScreen("title")}
-          className="mb-2 self-start rounded-full bg-white/10 px-4 py-1.5 text-xs font-semibold hover:bg-white/20"
-        >
-          ‹ Back
-        </button>
+  // Highlighting on hover/focus tints the whole screen, so you can feel the
+  // nation before you commit to it.
+  const [preview, setPreview] = useState<string | null>(null);
+  const tint = TEAMS[preview ?? homeTeamId]?.kitColor;
 
-        <h1 className="text-center text-3xl font-black tracking-tight">
-          Choose your nation
-        </h1>
-        <p className="mb-5 text-center text-xs text-emerald-300/70">
+  return (
+    <Screen tint={tint}>
+      <BackButton onClick={() => setScreen("title")} />
+
+      <div className="pp-rise mt-3">
+        <Headline>Choose your nation</Headline>
+        <p className="mt-1.5 text-center text-xs text-emerald-300/70">
           Your opponent is drawn at random.
         </p>
+      </div>
 
-        <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4">
-          {TEAM_IDS.map((id) => {
-            const t = TEAMS[id];
-            const selected = id === homeTeamId;
-            return (
-              <button
-                key={id}
-                onClick={() => chooseTeam(id)}
-                className={`flex flex-col items-center gap-1 rounded-xl px-2 py-3.5 ring-2 transition active:scale-95 ${
-                  selected
-                    ? "ring-yellow-300"
-                    : "ring-transparent hover:ring-white/40"
-                }`}
-                style={{
-                  backgroundColor: t.kitColor,
-                  color: readableText(t.kitColor),
-                }}
-              >
-                <span className="text-3xl leading-none">{t.flag}</span>
-                <span className="text-xs font-black tracking-wide">{t.short}</span>
-              </button>
-            );
-          })}
-        </div>
+      <div className="pp-rise mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+        {TEAM_IDS.map((id) => {
+          const t = TEAMS[id];
+          const selected = id === homeTeamId;
+          return (
+            <button
+              key={id}
+              onClick={() => chooseTeam(id)}
+              onPointerEnter={() => setPreview(id)}
+              onPointerLeave={() => setPreview(null)}
+              onFocus={() => setPreview(id)}
+              onBlur={() => setPreview(null)}
+              className={`group relative overflow-hidden rounded-xl p-3 text-left ring-1 backdrop-blur-sm transition active:scale-95 ${
+                selected
+                  ? "bg-white/15 ring-yellow-300/80 shadow-[0_8px_28px_-10px_rgba(250,204,21,0.8)]"
+                  : "bg-white/[0.07] ring-white/10 hover:bg-white/[0.13] hover:ring-white/25"
+              }`}
+            >
+              {/* Kit-colour wash along the top edge of the card */}
+              <span
+                className="absolute inset-x-0 top-0 h-1"
+                style={{ backgroundColor: t.kitColor }}
+              />
+              <span
+                className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full opacity-20 blur-2xl transition group-hover:opacity-40"
+                style={{ backgroundColor: t.kitColor }}
+              />
 
-        <Section title="Match length">
+              <span className="relative flex items-center gap-2.5">
+                <Flag id={id} width={30} />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-black leading-tight">
+                    {t.name}
+                  </span>
+                  <span className="block text-[10px] uppercase tracking-wider text-white/45">
+                    {teamStyle(id)}
+                  </span>
+                </span>
+                <span className="flex items-center gap-1 rounded-md bg-black/40 px-1.5 py-1 text-xs font-black tabular-nums">
+                  <StarIcon className="h-2.5 w-2.5 text-yellow-300" />
+                  {teamRating(id)}
+                </span>
+              </span>
+
+              <span className="relative mt-2 block truncate text-[11px] leading-tight text-white/55">
+                {starPlayers(id, 3).join(" · ")}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="pp-rise mt-7">
+        <SectionTitle>Match length</SectionTitle>
+        <div className="flex justify-center gap-2">
           {DURATION_OPTIONS.map((d) => (
             <Pill
               key={d}
@@ -79,9 +114,12 @@ export function TeamSelect() {
               {Math.round(d / 60)} min
             </Pill>
           ))}
-        </Section>
+        </div>
+      </div>
 
-        <Section title="Difficulty">
+      <div className="pp-rise mt-6">
+        <SectionTitle>Difficulty</SectionTitle>
+        <div className="flex justify-center gap-2">
           {DIFFICULTY_IDS.map((d: Difficulty) => (
             <Pill
               key={d}
@@ -91,9 +129,12 @@ export function TeamSelect() {
               {DIFFICULTY_LABELS[d]}
             </Pill>
           ))}
-        </Section>
+        </div>
+      </div>
 
-        <Section title="Controls">
+      <div className="pp-rise mt-6">
+        <SectionTitle>Controls</SectionTitle>
+        <div className="flex justify-center gap-2">
           {(["joystick", "keyboard"] as ControlMode[]).map((m) => (
             <Pill
               key={m}
@@ -103,58 +144,17 @@ export function TeamSelect() {
               {m === "keyboard" ? "Keyboard" : "Touch"}
             </Pill>
           ))}
-        </Section>
-
-        <p className="mt-3 text-center text-xs leading-relaxed text-emerald-200/60">
+        </div>
+        <p className="mx-auto mt-3 max-w-lg text-center text-[11px] leading-relaxed text-emerald-200/55">
           {controlMode === "keyboard"
             ? "WASD move · Shift sprint · click a team-mate to select, again to take over · click yourself to call for the ball · E pass · hold Space to shoot"
             : "Left stick moves · tap a team-mate to select (tap again to take over) · tap yourself to call for the ball · PASS sends it · drag SHOOT to aim and fire"}
         </p>
-
-        <p className="mt-6 text-center text-sm text-white/50">
-          Tap a nation to continue →
-        </p>
       </div>
-    </div>
-  );
-}
 
-function Section({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="mt-6">
-      <h2 className="mb-2 text-center text-[10px] font-bold uppercase tracking-[0.25em] text-emerald-300/80">
-        {title}
-      </h2>
-      <div className="flex justify-center gap-2">{children}</div>
-    </div>
-  );
-}
-
-function Pill({
-  active,
-  onClick,
-  children,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-full px-5 py-2 text-sm font-bold transition active:scale-95 ${
-        active
-          ? "bg-yellow-400 text-emerald-950"
-          : "bg-white/10 text-white hover:bg-white/20"
-      }`}
-    >
-      {children}
-    </button>
+      <p className="mt-8 text-center text-sm text-white/40">
+        Tap a nation to continue
+      </p>
+    </Screen>
   );
 }

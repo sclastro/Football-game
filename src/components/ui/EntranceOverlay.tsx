@@ -2,6 +2,8 @@ import { useEffect, useState } from "react";
 import { useGameStore } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
 import { DIFFICULTY_LABELS } from "@/game/data/difficulty";
+import { Flag } from "./Flag";
+import { PlayIcon } from "./Icons";
 
 /**
  * The broadcast lower-third shown over the walk-out: flags, nation names and a
@@ -37,7 +39,9 @@ export function EntranceOverlay() {
         onClick={beginPlay}
         className="pointer-events-auto absolute right-4 top-4 rounded-full bg-black/60 px-5 py-2 text-sm font-bold ring-1 ring-white/25 backdrop-blur-sm hover:bg-black/80 active:scale-95"
       >
-        SKIP ▶
+        <span className="inline-flex items-center gap-2">
+          SKIP <PlayIcon className="h-3.5 w-3.5" />
+        </span>
       </button>
 
       {shown && (
@@ -49,9 +53,9 @@ export function EntranceOverlay() {
             Matchday
           </div>
           <div className="mt-3 flex items-center justify-center gap-5">
-            <Team flag={home.flag} name={home.name} color={home.kitColor} />
+            <Team teamId={home.id} name={home.name} color={home.kitColor} />
             <span className="text-2xl font-black text-white/40">vs</span>
-            <Team flag={away.flag} name={away.name} color={away.kitColor} />
+            <Team teamId={away.id} name={away.name} color={away.kitColor} />
           </div>
           <div className="mt-3 text-xs text-white/50">
             {DIFFICULTY_LABELS[difficulty]} difficulty
@@ -63,17 +67,17 @@ export function EntranceOverlay() {
 }
 
 function Team({
-  flag,
+  teamId,
   name,
   color,
 }: {
-  flag: string;
+  teamId: string;
   name: string;
   color: string;
 }) {
   return (
     <div className="flex flex-col items-center gap-1">
-      <span className="text-4xl leading-none">{flag}</span>
+      <Flag id={teamId} width={52} />
       <span className="text-lg font-black tracking-tight">{name}</span>
       <span
         className="h-1 w-12 rounded-full"

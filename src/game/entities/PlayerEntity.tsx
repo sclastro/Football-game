@@ -43,6 +43,7 @@ import { speedMultiplier } from "@/game/data/teamStrength";
 import {
   applyKickPose,
   applyDivePose,
+  DIVE_POSE_TIME,
   KICK_DURATIONS,
   type KickKind,
   type KickRefs,
@@ -455,7 +456,7 @@ export function PlayerEntity({
     // actually going, so a low shot gets a grounded dive and a top-corner one
     // gets full stretch.
     if (record.ai.diveUntil > nowSec) {
-      const t = 1 - (record.ai.diveUntil - nowSec) / 0.55;
+      const t = 1 - (record.ai.diveUntil - nowSec) / DIVE_POSE_TIME;
       const extend = Math.sin(THREE.MathUtils.clamp(t * 1.6, 0, 1) * Math.PI * 0.5);
       kickRefs.lean = leanRef.current;
       kickRefs.leftLeg = leftLegRef.current;

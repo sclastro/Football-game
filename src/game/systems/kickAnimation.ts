@@ -2,6 +2,9 @@ import * as THREE from 'three'
 
 export type KickKind = 'shot' | 'pass' | 'trap'
 
+/** Seconds a keeper's dive pose plays over. */
+export const DIVE_POSE_TIME = 0.55
+
 /** How long each action plays for, in seconds. */
 export const KICK_DURATIONS: Record<KickKind, number> = {
   shot: 0.44,

@@ -3,6 +3,10 @@ import type { TeamInfo } from "@/game/state/types";
 /**
  * World-Cup style national teams. Colours drive kit tint + crowd/scoreboard.
  * Each nation's squad lives in `rosters.ts`, keyed by the same team id.
+ *
+ * There is deliberately no flag field: flags are DRAWN by `components/ui/Flag`
+ * from the team id. Flag emoji are unusable because Windows ships no
+ * regional-indicator glyphs, so they rendered as boxed letters.
  */
 export const TEAMS: Record<string, TeamInfo> = {
   BRA: {
@@ -11,7 +15,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "BRA",
     kitColor: "#f7d417",
     accentColor: "#1f9e4a",
-    flag: "🇧🇷",
   },
   ARG: {
     id: "ARG",
@@ -19,7 +22,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "ARG",
     kitColor: "#6cb7e6",
     accentColor: "#ffffff",
-    flag: "🇦🇷",
   },
   FRA: {
     id: "FRA",
@@ -27,7 +29,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "FRA",
     kitColor: "#1f3c8c",
     accentColor: "#ffffff",
-    flag: "🇫🇷",
   },
   ENG: {
     id: "ENG",
@@ -35,7 +36,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "ENG",
     kitColor: "#ececec",
     accentColor: "#cf1020",
-    flag: "🏴󠁧󠁢󠁥󠁮󠁧󠁿",
   },
   GER: {
     id: "GER",
@@ -43,7 +43,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "GER",
     kitColor: "#efefef",
     accentColor: "#111111",
-    flag: "🇩🇪",
   },
   ESP: {
     id: "ESP",
@@ -51,7 +50,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "ESP",
     kitColor: "#c8102e",
     accentColor: "#ffd100",
-    flag: "🇪🇸",
   },
   POR: {
     id: "POR",
@@ -59,7 +57,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "POR",
     kitColor: "#a01329",
     accentColor: "#0d5c34",
-    flag: "🇵🇹",
   },
   NED: {
     id: "NED",
@@ -67,7 +64,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "NED",
     kitColor: "#f36c21",
     accentColor: "#ffffff",
-    flag: "🇳🇱",
   },
   JPN: {
     id: "JPN",
@@ -75,7 +71,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "JPN",
     kitColor: "#12326b",
     accentColor: "#ffffff",
-    flag: "🇯🇵",
   },
   CRO: {
     id: "CRO",
@@ -83,7 +78,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "CRO",
     kitColor: "#d7263d",
     accentColor: "#ffffff",
-    flag: "🇭🇷",
   },
   MEX: {
     id: "MEX",
@@ -91,7 +85,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "MEX",
     kitColor: "#046a38",
     accentColor: "#ffffff",
-    flag: "🇲🇽",
   },
   MAR: {
     id: "MAR",
@@ -99,7 +92,6 @@ export const TEAMS: Record<string, TeamInfo> = {
     short: "MAR",
     kitColor: "#b81b22",
     accentColor: "#0e6b3f",
-    flag: "🇲🇦",
   },
 };
 

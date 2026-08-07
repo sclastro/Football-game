@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useGameStore } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
+import { Flag } from "./Flag";
+import { ClockIcon } from "./Icons";
 
 function formatClock(seconds: number): string {
   const m = Math.floor(seconds / 60);
@@ -24,13 +26,13 @@ export function Scoreboard() {
       <div className="flex items-stretch overflow-hidden rounded-md shadow-xl ring-1 ring-white/10">
         {/* Colour accent bars either side */}
         <div className="w-1.5" style={{ backgroundColor: home.kitColor }} />
-        <TeamCell color={home.kitColor} flag={home.flag} short={home.short} />
+        <TeamCell color={home.kitColor} teamId={home.id} short={home.short} />
         <div className="flex flex-col items-center justify-center bg-neutral-950/80 px-3 py-1 backdrop-blur-md">
           <div className="text-[26px] font-black leading-none tracking-wide tabular-nums text-white">
             {score.home}<span className="mx-1 text-neutral-600">:</span>{score.away}
           </div>
         </div>
-        <TeamCell color={away.kitColor} flag={away.flag} short={away.short} />
+        <TeamCell color={away.kitColor} teamId={away.id} short={away.short} />
         <div className="w-1.5" style={{ backgroundColor: away.kitColor }} />
       </div>
       {/* Timer pill under the score */}
@@ -50,9 +52,16 @@ export function Scoreboard() {
             ? "FULL TIME"
             : phase === "shootout" || phase === "shootoutIntro"
               ? "PENALTIES"
-              : phase === "extraTime" || phase === "extraTimeBreak"
-                ? `ET ⏱ ${formatClock(clock)}`
-                : `⏱ ${formatClock(clock)}`}
+              : null}
+          {phase !== "fulltime" &&
+            phase !== "shootout" &&
+            phase !== "shootoutIntro" && (
+              <span className="inline-flex items-center gap-1">
+                <ClockIcon />
+                {phase === "extraTime" || phase === "extraTimeBreak" ? "ET " : ""}
+                {formatClock(clock)}
+              </span>
+            )}
         </span>
       </div>
     </div>
@@ -61,16 +70,16 @@ export function Scoreboard() {
 
 function TeamCell({
   color,
-  flag,
+  teamId,
   short,
 }: {
   color: string;
-  flag: string;
+  teamId: string;
   short: string;
 }) {
   return (
     <div className="flex items-center gap-2 bg-neutral-900/80 px-3 py-1.5 text-white backdrop-blur-md">
-      <span className="text-xl leading-none">{flag}</span>
+      <Flag id={teamId} width={22} />
       <span className="text-lg font-extrabold tracking-wide">{short}</span>
       <span
         className="ml-0.5 h-4 w-1 rounded-full"

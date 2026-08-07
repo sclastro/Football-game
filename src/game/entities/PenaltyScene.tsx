@@ -7,6 +7,7 @@ import { FIELD_DIMENSIONS } from "./Field";
 import { GOAL_DIMENSIONS } from "./Goal";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import type { Side } from "@/game/state/types";
+import { DIVE_POSE_TIME } from "@/game/systems/kickAnimation";
 
 const HALF_L = FIELD_DIMENSIONS.length / 2;
 const HALF_W = FIELD_DIMENSIONS.width / 2;
@@ -154,11 +155,16 @@ export function PenaltyScene() {
         }
         rb.setTranslation({ x: kx, y: 1, z: goalZ + attackSign * -0.4 }, true);
         rec.position.set(kx, 1, goalZ + attackSign * -0.4);
-        // Feed the pose: side and how far through the dive we are. Height comes
-        // from the shot so the keeper reaches low, level or high.
+
+        // Feed the pose. PlayerEntity derives its 0→1 progress from how much of
+        // DIVE_POSE_TIME is left, so the remaining time has to be written to
+        // match the progress we want — writing a fixed offset every frame would
+        // pin the pose at one instant and the dive would snap rather than play.
         rec.ai.diveSide = kick && kick.diveDir !== "centre" ? Math.sign(kx) || 0 : 0;
         rec.ai.diveUntil =
-          dive > 0 ? performance.now() / 1000 + 0.25 : 0;
+          dive > 0
+            ? performance.now() / 1000 + DIVE_POSE_TIME * (1 - dive)
+            : 0;
         rec.ai.diveHeight = kick
           ? kick.shotHeight === "low"
             ? 0

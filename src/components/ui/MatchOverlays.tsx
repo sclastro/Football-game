@@ -3,6 +3,8 @@ import { useGameStore, shootoutGoals } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
 import type { ControlMode } from "@/game/state/types";
 import { audio } from "@/game/systems/audio";
+import { Flag } from "./Flag";
+import { GearIcon, SoundOnIcon, SoundOffIcon, PlayIcon } from "./Icons";
 
 /** A centred modal card, shared by every match overlay. */
 function Card({
@@ -31,11 +33,11 @@ function ScoreLine() {
   const away = TEAMS[useGameStore((s) => s.awayTeamId)];
   return (
     <div className="my-3 flex items-center justify-center gap-3 text-3xl font-black tabular-nums">
-      <span>{home.flag}</span>
+      <Flag id={home.id} width={30} />
       <span>
         {score.home} - {score.away}
       </span>
-      <span>{away.flag}</span>
+      <Flag id={away.id} width={30} />
     </div>
   );
 }
@@ -65,7 +67,9 @@ export function ExtraTimeOverlay() {
         className="rounded-full bg-yellow-400 px-8 py-2.5 font-black text-emerald-950 hover:bg-yellow-300 active:scale-95"
         onClick={beginExtraTime}
       >
-        PLAY ON ▶
+        <span className="inline-flex items-center gap-2">
+          PLAY ON <PlayIcon className="h-4 w-4" />
+        </span>
       </button>
     </Card>
   );
@@ -91,7 +95,9 @@ export function ShootoutIntroOverlay() {
         className="rounded-full bg-yellow-400 px-8 py-2.5 font-black text-emerald-950 hover:bg-yellow-300 active:scale-95"
         onClick={beginShootout}
       >
-        TO THE SPOT ▶
+        <span className="inline-flex items-center gap-2">
+          TO THE SPOT <PlayIcon className="h-4 w-4" />
+        </span>
       </button>
     </Card>
   );
@@ -161,8 +167,9 @@ export function SettingsMenu() {
       <button
         className="pointer-events-auto absolute right-3 top-14 rounded-md bg-black/50 px-3 py-1.5 text-sm text-white hover:bg-black/70"
         onClick={() => setOpen((o) => !o)}
+        aria-label="Settings"
       >
-        ⚙
+        <GearIcon className="h-4 w-4" />
       </button>
       {open && (
         <div className="pointer-events-auto absolute right-3 top-24 w-56 rounded-lg bg-neutral-900/95 p-3 text-sm text-white ring-1 ring-white/10">
@@ -193,7 +200,10 @@ export function SettingsMenu() {
             }}
           >
             <span>Sound</span>
-            <span>{soundOn ? "🔊 On" : "🔈 Off"}</span>
+            <span className="flex items-center gap-1.5">
+              {soundOn ? <SoundOnIcon /> : <SoundOffIcon />}
+              {soundOn ? "On" : "Off"}
+            </span>
           </button>
           <button
             className="w-full rounded-md bg-white/10 px-2 py-1.5 text-xs font-semibold hover:bg-white/20"

@@ -7,6 +7,7 @@ body,
   width: 100%;
   margin: 0;
   padding: 0;
+  /* The match canvas must never let the page itself scroll or rubber-band. */
   overflow: hidden;
   background: #000;
   font-family:
@@ -15,4 +16,91 @@ body,
     'Segoe UI',
     Roboto,
     sans-serif;
+}
+
+/*
+ * Menu screens are positioned `absolute inset-0`. Without this, that resolves
+ * against the viewport rather than #root, so a screen could never be taller
+ * than the window and anything below the fold was unreachable on a laptop.
+ */
+#root {
+  position: relative;
+}
+
+/* Slim scrollbars inside the menu scroll containers, so they don't break the look. */
+.pp-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(255 255 255 / 0.25) transparent;
+}
+.pp-scroll::-webkit-scrollbar {
+  width: 10px;
+}
+.pp-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.pp-scroll::-webkit-scrollbar-thumb {
+  background-color: rgb(255 255 255 / 0.22);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+.pp-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(255 255 255 / 0.4);
+  background-clip: content-box;
+}
+
+/* Shared menu motion, used by every screen so the layers feel like one product. */
+@keyframes pp-drift {
+  0%,
+  100% {
+    transform: translate3d(-6%, 0, 0) scale(1.15);
+  }
+  50% {
+    transform: translate3d(6%, -3%, 0) scale(1.25);
+  }
+}
+@keyframes pp-sweep {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+  }
+  100% {
+    transform: translateX(320%) skewX(-18deg);
+  }
+}
+@keyframes pp-spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pp-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes pp-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.pp-rise {
+  animation: pp-rise 0.6s ease-out both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pp-rise {
+    animation: none;
+  }
 }

@@ -11,8 +11,6 @@ export interface TeamInfo {
   kitColor: string;
   /** Secondary colour for trim/contrast. */
   accentColor: string;
-  /** Emoji flag for the scoreboard. */
-  flag: string;
 }
 
 /**

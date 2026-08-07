@@ -1,5 +1,7 @@
 import { useGameStore, SHOOTOUT_KICKS, shootoutGoals } from "@/game/state/gameStore";
 import { TEAMS } from "@/game/data/teams";
+import { Flag } from "./Flag";
+import { ArrowLeftIcon, ArrowUpIcon, ArrowRightIcon } from "./Icons";
 import type { PenaltyDirection, PenaltyOutcome } from "@/game/state/types";
 
 /** What to shout when a kick resolves, from the user's point of view. */
@@ -19,10 +21,14 @@ function outcomeLabel(
   }
 }
 
-const DIRECTIONS: { dir: PenaltyDirection; label: string; glyph: string }[] = [
-  { dir: "left", label: "Left", glyph: "◀" },
-  { dir: "centre", label: "Centre", glyph: "▲" },
-  { dir: "right", label: "Right", glyph: "▶" },
+const DIRECTIONS: {
+  dir: PenaltyDirection;
+  label: string;
+  Icon: (p: { className?: string }) => React.ReactElement;
+}[] = [
+  { dir: "left", label: "Left", Icon: ArrowLeftIcon },
+  { dir: "centre", label: "Centre", Icon: ArrowUpIcon },
+  { dir: "right", label: "Right", Icon: ArrowRightIcon },
 ];
 
 /** One kick's outcome as a dot: filled = scored, hollow = saved, dim = to come. */
@@ -70,7 +76,7 @@ export function ShootoutOverlay() {
           {so.suddenDeath ? "Sudden death" : "Penalty shootout"}
         </div>
         <Row
-          flag={home.flag}
+          teamId={home.id}
           short={home.short}
           goals={homeGoals}
           results={so.results.home}
@@ -78,7 +84,7 @@ export function ShootoutOverlay() {
         />
         <div className="h-1.5" />
         <Row
-          flag={away.flag}
+          teamId={away.id}
           short={away.short}
           goals={awayGoals}
           results={so.results.away}
@@ -99,7 +105,7 @@ export function ShootoutOverlay() {
                 : `${away.short} to take · you're in goal`}
             </div>
             <div className="pointer-events-auto flex justify-center gap-3">
-              {DIRECTIONS.map(({ dir, label, glyph }) => (
+              {DIRECTIONS.map(({ dir, label, Icon }) => (
                 <button
                   key={dir}
                   onClick={() => penaltyChoice(dir)}
@@ -109,7 +115,7 @@ export function ShootoutOverlay() {
                       : "bg-sky-500/85 ring-white/40 hover:bg-sky-400"
                   }`}
                 >
-                  <span className="text-2xl leading-none">{glyph}</span>
+                  <Icon className="h-7 w-7" />
                   <span>{label}</span>
                 </button>
               ))}
@@ -138,13 +144,13 @@ export function ShootoutOverlay() {
 }
 
 function Row({
-  flag,
+  teamId,
   short,
   goals,
   results,
   active,
 }: {
-  flag: string;
+  teamId: string;
   short: string;
   goals: number;
   results: (boolean | null)[];
@@ -161,7 +167,7 @@ function Row({
         active ? "bg-yellow-400/15 ring-1 ring-yellow-300/50" : ""
       }`}
     >
-      <span className="text-xl leading-none">{flag}</span>
+      <Flag id={teamId} width={22} />
       <span className="w-10 text-sm font-black">{short}</span>
       <span className="w-5 text-lg font-black tabular-nums">{goals}</span>
       <Dots results={shown} />

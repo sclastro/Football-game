@@ -14,6 +14,7 @@ import {
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
 import { ROLE_BANDS } from '@/game/data/formations'
+import { DIVE_POSE_TIME } from './kickAnimation'
 import { GOAL_DIMENSIONS } from '@/game/entities/Goal'
 import { DIFFICULTY, type DifficultyTuning } from '@/game/data/difficulty'
 import { useGameStore } from '@/game/state/gameStore'
@@ -480,7 +481,7 @@ function goalkeepBehaviour(
           const dx = crossX - rec.position.x
           if (Math.abs(dx) > 0.7 && Math.abs(dx) < tune.gkReach) {
             // Commit to a dive: pose plus a burst of lateral pace.
-            ai.diveUntil = now + 0.55
+            ai.diveUntil = now + DIVE_POSE_TIME
             ai.diveSide = Math.sign(dx)
             // Height comes from where the ball will actually cross the line.
             const crossY = ball.y + vel.y * timeToLine
