@@ -1,5 +1,6 @@
 import { useRef } from "react";
 import { handleScreenTap } from "@/game/systems/selectionSystem";
+import { Minimap } from "./Minimap";
 
 /** A pointer that moved less than this, for less than this long, is a click. */
 const TAP_MAX_PX = 10;
@@ -36,11 +37,17 @@ export function HUD() {
           handleScreenTap(e.clientX, e.clientY);
         }}
       />
+      {/* The match camera is close now, so keyboard players need the radar too. */}
+      <div className="pointer-events-none absolute bottom-0 left-0 p-3">
+        <Minimap />
+      </div>
+
       <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center p-4 font-sans text-white">
         <div className="max-w-2xl rounded-md bg-black/50 px-4 py-2 text-center text-sm">
-          WASD move &middot; Shift sprint &middot; <b>click a team-mate</b> to
-          select, click again to take over &middot; <b>click yourself</b> to call
-          for the ball &middot; E pass &middot; hold Space to shoot
+          WASD move &middot; Shift sprint &middot; hold <b>Space</b> (or J) to
+          shoot &middot; <b>Q</b> rainbow flick &middot; <b>F</b> slide &middot;{" "}
+          <b>click a team-mate</b> to select, click again to pass to them or take
+          them over
         </div>
       </div>
     </>

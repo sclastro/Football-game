@@ -4,6 +4,7 @@ import { Scoreboard, GoalFlash } from "@/components/ui/Scoreboard";
 import { TouchControls } from "@/components/ui/TouchControls";
 import { ShootoutOverlay } from "@/components/ui/ShootoutOverlay";
 import { EntranceOverlay } from "@/components/ui/EntranceOverlay";
+import { TutorialOverlay } from "@/components/ui/TutorialOverlay";
 import {
   FullTimeOverlay,
   ExtraTimeOverlay,
@@ -33,6 +34,7 @@ export default function GameShell() {
       {showControls &&
         (controlMode === "keyboard" ? <HUD /> : <TouchControls />)}
       <EntranceOverlay />
+      <TutorialOverlay />
       <ExtraTimeOverlay />
       <ShootoutIntroOverlay />
       <ShootoutOverlay />

@@ -13,17 +13,24 @@ import {
   tryShoot,
   tryPass,
   tryPassTo,
+  tryFlick,
   aiKick,
   horizontalDistanceToBall,
   distanceToAttackingGoal,
 } from "@/game/systems/ballPossessionSystem";
+import {
+  startSlide,
+  KNOCKDOWN_TIME,
+  SLIDE_DURATION,
+  SLIDE_SPEED,
+} from "@/game/systems/slideSystem";
 import { selectionState, clearSelection } from "@/game/systems/selectionSystem";
 import { aimState } from "@/game/systems/aimPreview";
-import { virtualInput } from "@/game/systems/virtualInput";
 import {
   computeEntranceInput,
   entranceElapsed,
 } from "@/game/systems/entranceSystem";
+import { tutorialState } from "@/game/systems/tutorialSystem";
 import { isPlayingPhase, type PlayerPosition } from "@/game/state/types";
 import {
   computeAiInput,
@@ -43,6 +50,8 @@ import { speedMultiplier } from "@/game/data/teamStrength";
 import {
   applyKickPose,
   applyDivePose,
+  applyKnockdownPose,
+  applySlidePose,
   DIVE_POSE_TIME,
   KICK_DURATIONS,
   type KickKind,
@@ -53,6 +62,7 @@ import {
   callState,
   clearPass,
   dribbleState,
+  makeSlideState,
   playerRegistry,
   type PlayerRecord,
   type TeamSide,
@@ -90,10 +100,12 @@ function contrastText(hex: string): string {
 const AIM_SHOW_RANGE = PHYSICS_CONFIG.ball.kickRange * 1.8;
 
 /**
- * Publish the current aim so the on-pitch indicator can draw it. Power comes
- * from the drag length on touch, or from how long Space has been held on
- * keyboard; direction comes from the touch stick when it's being dragged,
- * otherwise from the way the player is facing.
+ * Publish the current aim so the on-pitch arrow can draw it.
+ *
+ * Power comes from the drag length on touch or the hold time on keyboard, and
+ * the arrow's length is literally how far the ball will travel. Direction is
+ * ALWAYS the way the player is facing — dragging the shoot circle to the right
+ * while running left still strikes the ball to the left.
  */
 function updateAim(
   ball: RapierRigidBody,
@@ -102,8 +114,7 @@ function updateAim(
   input: InputState,
 ): void {
   const playerPos = rec.position;
-  const touchAiming = virtualInput.shootHeld;
-  if (!touchAiming && !input.shootHeld) {
+  if (!input.shootHeld) {
     aimState.active = false;
     return;
   }
@@ -112,27 +123,15 @@ function updateAim(
     return;
   }
 
-  let dx: number;
-  let dz: number;
-  const ax = virtualInput.shootAimX;
-  const ay = virtualInput.shootAimY;
-  if (touchAiming && Math.hypot(ax, ay) > 0.05) {
-    // Same screen→world mapping the input system uses when the shot fires.
-    const len = Math.hypot(ay, ax) || 1;
-    dx = ay / len;
-    dz = -ax / len;
-  } else {
-    dx = -Math.sin(yaw);
-    dz = -Math.cos(yaw);
-  }
-
   const t = ball.translation();
   aimState.active = true;
-  aimState.power = touchAiming
-    ? virtualInput.shootPower
-    : THREE.MathUtils.clamp(input.shootCharge / PHYSICS_CONFIG.ball.maxChargeTime, 0, 1);
-  aimState.dirX = dx;
-  aimState.dirZ = dz;
+  aimState.power = THREE.MathUtils.clamp(
+    input.shootCharge / PHYSICS_CONFIG.ball.maxChargeTime,
+    0,
+    1,
+  );
+  aimState.dirX = -Math.sin(yaw);
+  aimState.dirZ = -Math.cos(yaw);
   aimState.originX = t.x;
   aimState.originY = t.y;
   aimState.originZ = t.z;
@@ -153,6 +152,22 @@ interface PlayerEntityProps {
   slotIndex: number;
   /** Formation role, which decides how far up and back this player roams. */
   role: PlayerPosition;
+}
+
+/** Dead-centre marker over the player you are driving, for both teams' sake. */
+function ControlDot() {
+  return (
+    <Billboard position={[0, 2.05, 0]}>
+      <mesh>
+        <circleGeometry args={[0.17, 20]} />
+        <meshBasicMaterial color="#ff2d2d" toneMapped={false} />
+      </mesh>
+      <mesh position={[0, 0, -0.01]}>
+        <circleGeometry args={[0.24, 20]} />
+        <meshBasicMaterial color="#ffffff" toneMapped={false} />
+      </mesh>
+    </Billboard>
+  );
 }
 
 /** Low-poly voxel-style character. Human-controlled when the store says so, AI otherwise. */
@@ -227,9 +242,8 @@ export function PlayerEntity({
       shootCharge: 0,
       shootReleased: false,
       passPressed: false,
-      hasShootAim: false,
-      shootAimX: 0,
-      shootAimZ: 0,
+      flickPressed: false,
+      slidePressed: false,
     }),
     [],
   );
@@ -243,8 +257,11 @@ export function PlayerEntity({
       yaw: 0,
       spawn: spawnPosition,
       slotIndex,
+      slot: slotIndex,
       rigidBody: null,
       ai: makeAiState(),
+      slide: makeSlideState(),
+      knockedUntil: 0,
     }),
     // Registry record identity must be stable for this entity's lifetime.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -302,14 +319,44 @@ export function PlayerEntity({
       }
     }
 
+    const nowClock = performance.now() / 1000;
+    const knocked = record.knockedUntil > nowClock;
+    const sliding = record.slide.activeUntil > nowClock;
+
     let input: InputState;
     if (phase === "entrance") {
       // Everyone walks out, including the player you'll be controlling.
       input = computeEntranceInput(record, aiInput, entranceElapsed());
     } else if (controlled && active) {
       input = readInput();
+      if (knocked) {
+        // Flat on the floor: the controls are simply dead until they get up.
+        input.moveDirection.set(0, 0);
+        input.sprinting = false;
+        input.shootHeld = false;
+        input.shootReleased = false;
+        input.passPressed = false;
+        input.flickPressed = false;
+        input.slidePressed = false;
+      } else if (input.slidePressed && startSlide(record)) {
+        // A slide is committed: you go where you were already pointing and you
+        // cannot steer out of it. That is what makes it a risk.
+        input.moveDirection.set(-Math.sin(yaw.current), -Math.cos(yaw.current));
+      }
     } else if (!controlled && active) {
-      input = computeAiInput(record, aiInput);
+      if (tutorialState.frozen) {
+        // A frozen lesson: everyone else stands exactly where they were put, so
+        // the thing being demonstrated is the only thing moving.
+        aiInput.moveDirection.set(0, 0);
+        aiInput.sprinting = false;
+        aiInput.shootReleased = false;
+        aiInput.passPressed = false;
+        aiInput.flickPressed = false;
+        aiInput.slidePressed = false;
+        input = aiInput;
+      } else {
+        input = computeAiInput(record, aiInput);
+      }
     } else {
       aiInput.moveDirection.set(0, 0);
       aiInput.sprinting = false;
@@ -323,9 +370,21 @@ export function PlayerEntity({
         ? useGameStore.getState().homeTeamId
         : useGameStore.getState().awayTeamId,
     );
-    const speedScale =
+    let speedScale =
       (controlled ? 1 : record.ai.speed * aiSpeedFactorNow() * record.ai.speedBoost) *
       teamPace;
+
+    if (knocked) {
+      speedScale = 0;
+      input.moveDirection.set(0, 0);
+    } else if (sliding) {
+      // A slide travels along the line it was launched on, faster than a run
+      // and completely uncontrollable until it ends.
+      input.moveDirection.set(-Math.sin(yaw.current), -Math.cos(yaw.current));
+      input.sprinting = true;
+      speedScale *= SLIDE_SPEED;
+    }
+
     const speed = updateController(delta, input, speedScale);
 
     // Mirror the physics body's kinematic transform onto the visual model.
@@ -346,7 +405,13 @@ export function PlayerEntity({
     if (ball && active) {
       if (controlled) {
         updateAim(ball, record, yaw.current, input);
-        if (tryShoot(ball, id, record.position, yaw.current, input)) {
+        if (input.flickPressed) {
+          if (tryFlick(ball, id, record.position, yaw.current)) {
+            kickTimer.current = KICK_DURATIONS.flick;
+            kickKind.current = "flick";
+            audio.flick();
+          }
+        } else if (tryShoot(ball, id, record.position, yaw.current, input)) {
           kickTimer.current = KICK_DURATIONS.shot;
           kickKind.current = "shot";
           audio.kick();
@@ -368,7 +433,7 @@ export function PlayerEntity({
         }
       } else {
         aiKickCooldown.current = Math.max(0, aiKickCooldown.current - delta);
-        if (aiKickCooldown.current === 0) {
+        if (aiKickCooldown.current === 0 && !tutorialState.frozen) {
           const kicked = computeAiKick(
             record,
             (target, power, scatter) =>
@@ -450,6 +515,31 @@ export function PlayerEntity({
       kickRefs.leftArm = leftArmRef.current;
       kickRefs.rightArm = rightArmRef.current;
       applyKickPose(kickKind.current, t, kickRefs);
+    }
+
+    // Going to ground, either by choice or because someone put you there. Both
+    // override the run cycle and the kick poses completely.
+    if (knocked || sliding) {
+      kickRefs.lean = leanRef.current;
+      kickRefs.leftLeg = leftLegRef.current;
+      kickRefs.rightLeg = rightLegRef.current;
+      kickRefs.leftShin = leftShinRef.current;
+      kickRefs.rightShin = rightShinRef.current;
+      kickRefs.leftArm = leftArmRef.current;
+      kickRefs.rightArm = rightArmRef.current;
+      const drop = knocked
+        ? applyKnockdownPose(
+            1 - (record.knockedUntil - nowClock) / KNOCKDOWN_TIME,
+            kickRefs,
+          )
+        : applySlidePose(
+            1 - (record.slide.activeUntil - nowClock) / SLIDE_DURATION,
+            kickRefs,
+          );
+      if (group) group.position.y += drop;
+      if (leftForeRef.current) leftForeRef.current.rotation.x = 0;
+      if (rightForeRef.current) rightForeRef.current.rotation.x = 0;
+      kickTimer.current = 0;
     }
 
     // Keeper dive: launch, extend, reach. Height comes from where the ball is
@@ -703,12 +793,17 @@ export function PlayerEntity({
               </RoundedBox>
             </group>
           </group>
-          {/* Controlled-player marker: solid yellow ring at the feet */}
+          {/* Controlled player: a ring at the feet and a red dot overhead. The
+              dot is what you actually track at this camera distance — the ring
+              disappears behind other players the moment the box gets busy. */}
           {controlled && (
-            <mesh position={[0, LEG_BOTTOM + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-              <ringGeometry args={[0.42, 0.56, 28]} />
-              <meshBasicMaterial color="#ffee58" transparent opacity={0.9} />
-            </mesh>
+            <>
+              <mesh position={[0, LEG_BOTTOM + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+                <ringGeometry args={[0.42, 0.56, 28]} />
+                <meshBasicMaterial color="#ffee58" transparent opacity={0.9} />
+              </mesh>
+              <ControlDot />
+            </>
           )}
           {/* Selected team-mate marker: a cyan ring that spins and pulses.
               Visibility is toggled in the frame loop, not by React. */}

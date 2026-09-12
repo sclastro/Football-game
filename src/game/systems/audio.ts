@@ -228,6 +228,65 @@ class AudioEngine {
     src.connect(lp).connect(g).connect(master);
   }
 
+  /** The long grass-scrape of a slide going in. */
+  slide() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const src = this.noise(0.42);
+    if (!src) return;
+    // A band that opens and then closes again reads as studs skidding through
+    // turf; a flat noise burst just sounds like static.
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 0.7;
+    bp.frequency.setValueAtTime(700, ctx.currentTime);
+    bp.frequency.linearRampToValueAtTime(2200, ctx.currentTime + 0.12);
+    bp.frequency.exponentialRampToValueAtTime(420, ctx.currentTime + 0.42);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.42);
+    src.connect(bp).connect(g).connect(master);
+  }
+
+  /** Body contact: the thump when a tackle actually connects. */
+  tackle() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.setValueAtTime(140, ctx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(46, ctx.currentTime + 0.18);
+    g.gain.setValueAtTime(0.4, ctx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.2);
+    osc.connect(g).connect(master);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.21);
+    this.intercept();
+  }
+
+  /** Airy whoosh for a flick over the top. */
+  flick() {
+    const ctx = this.ctx;
+    const master = this.master;
+    if (!ctx || !master || !this.enabled) return;
+    const src = this.noise(0.3);
+    if (!src) return;
+    const bp = ctx.createBiquadFilter();
+    bp.type = "bandpass";
+    bp.Q.value = 1.6;
+    bp.frequency.setValueAtTime(900, ctx.currentTime);
+    bp.frequency.exponentialRampToValueAtTime(3200, ctx.currentTime + 0.26);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, ctx.currentTime);
+    g.gain.linearRampToValueAtTime(0.16, ctx.currentTime + 0.06);
+    g.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+    src.connect(bp).connect(g).connect(master);
+  }
+
   /** Metallic ring for hitting the post or crossbar. */
   post() {
     const ctx = this.ctx;

@@ -1,6 +1,7 @@
 import { useGameStore } from '@/game/state/gameStore'
-import { callState, playerRegistry } from './worldRegistry'
+import { callState, dribbleState, playerRegistry } from './worldRegistry'
 import { pickPlayerAtScreen } from './playerPicking'
+import { virtualInput } from './virtualInput'
 import { audio } from './audio'
 
 /** How long a shout for the ball stays live, in seconds. */
@@ -32,9 +33,17 @@ export function clearSelection(): void {
 
 /**
  * Handle a tap on a player.
- * - First tap on a teammate: select them (ring appears, they make a run).
- * - Second tap on the same teammate: take direct control of them.
- * - Tap on the player you already control: clear the selection.
+ *
+ * - First tap on a team-mate: select them. A ring spins under them and they
+ *   start their run.
+ * - Second tap on the same team-mate: if you have the ball, play it to them —
+ *   and control moves to them when it arrives. If you do not have the ball,
+ *   you simply take them over instead.
+ * - Tap on the player you already control: shout for the ball.
+ *
+ * The second tap carries both meanings because there is no longer a PASS
+ * button. Which one you get is never ambiguous: passing the ball requires
+ * having the ball.
  */
 export function tapPlayer(id: string): void {
   const rec = playerRegistry.get(id)
@@ -55,6 +64,12 @@ export function tapPlayer(id: string): void {
   }
 
   if (selectionState.selectedId === id) {
+    if (dribbleState.possessorId === store.controlledPlayerId) {
+      // Keep the selection: the pass needs to know who it is aimed at, and the
+      // possession system clears it once the ball has been struck.
+      virtualInput.passRequested = true
+      return
+    }
     clearSelection()
     store.setControlledPlayer(id)
     audio.select()

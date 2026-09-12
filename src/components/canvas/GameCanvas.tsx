@@ -13,9 +13,14 @@ import { Benches } from "@/game/entities/Bench";
 import { MatchClock } from "@/game/systems/matchClockSystem";
 import { PossessionController } from "@/game/systems/possessionSystem";
 import { CameraRig } from "@/game/systems/cameraSystem";
-import { FORMATION, homePosition, awayPosition } from "@/game/data/formations";
+import {
+  formationById,
+  homePosition,
+  awayPosition,
+} from "@/game/data/formations";
 import { TEAMS } from "@/game/data/teams";
 import { useGameStore } from "@/game/state/gameStore";
+import { TutorialDirector } from "@/game/systems/tutorialSystem";
 
 const GOAL_LINE_Z = FIELD_DIMENSIONS.length / 2;
 
@@ -26,6 +31,8 @@ export function GameCanvas() {
   // outgoing player and mounts the incoming one at the slot's spawn point.
   const homeSquad = useGameStore((s) => s.homeSquad);
   const awaySquad = useGameStore((s) => s.awaySquad);
+  const homeShape = formationById(useGameStore((s) => s.homeFormationId));
+  const awayShape = formationById(useGameStore((s) => s.awayFormationId));
 
   return (
     <Canvas
@@ -61,6 +68,7 @@ export function GameCanvas() {
       <Benches homeColor={home.kitColor} awayColor={away.kitColor} />
       <MatchClock />
       <PossessionController />
+      <TutorialDirector />
 
       <Physics gravity={PHYSICS_CONFIG.gravity}>
         <Field />
@@ -71,7 +79,7 @@ export function GameCanvas() {
         <Goal end={-1} lineZ={GOAL_LINE_Z} />
         <Goal end={1} lineZ={GOAL_LINE_Z} />
 
-        {FORMATION.map((slot, i) =>
+        {homeShape.slots.map((slot, i) =>
           homeSquad[i] ? (
             <PlayerEntity
               key={homeSquad[i]}
@@ -87,7 +95,7 @@ export function GameCanvas() {
             />
           ) : null,
         )}
-        {FORMATION.map((slot, i) =>
+        {awayShape.slots.map((slot, i) =>
           awaySquad[i] ? (
             <PlayerEntity
               key={awaySquad[i]}

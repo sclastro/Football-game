@@ -14,6 +14,7 @@ import {
   type PlayerRecord,
 } from "./worldRegistry";
 import { clearSelection } from "./selectionSystem";
+import { resolveSlides } from "./slideSystem";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { audio } from "./audio";
 
@@ -84,7 +85,9 @@ export function PossessionController() {
     dribbleState.possessorId = possessor ? possessor.id : null;
 
     updateTeamPhase(possessor);
+    autoSwitchOnOppositionPass(state.controlledPlayerId, state.setControlledPlayer);
     resolvePass(possessor, state.setControlledPlayer);
+    resolveSlides();
 
     // Carry the ball at the possessor's feet (unless a kick just released it).
     const now = performance.now() / 1000;
@@ -110,6 +113,55 @@ export function PossessionController() {
   });
 
   return null;
+}
+
+/**
+ * The pass we have already reacted to, so one pass only switches you once.
+ * Keyed by passer id plus the moment it expires, which is unique per pass.
+ */
+const lastHandledPass = { key: "" };
+
+/**
+ * Switch you to the nearest defender the instant the opposition play a pass.
+ *
+ * Defending used to mean chasing the ball with whoever you happened to be
+ * holding, several seconds behind the play. Now the pass itself is the trigger:
+ * as soon as it leaves their foot you are already on the man it is going to.
+ */
+function autoSwitchOnOppositionPass(
+  controlledId: string,
+  setControlledPlayer: (id: string) => void,
+): void {
+  if (!passState.active || !passState.fromId) {
+    lastHandledPass.key = "";
+    return;
+  }
+  const key = `${passState.fromId}:${passState.expiresAt}`;
+  if (key === lastHandledPass.key) return;
+
+  const passer = playerRegistry.get(passState.fromId);
+  if (!passer || passer.team === "home") return;
+  lastHandledPass.key = key;
+
+  // Nearest home outfielder to where the ball is being played, not to the ball:
+  // the point is to arrive with the receiver, not to trail the pass.
+  let best: PlayerRecord | null = null;
+  let bestDist = Infinity;
+  for (const rec of playerRegistry.values()) {
+    if (rec.team !== "home" || rec.isGoalkeeper) continue;
+    const d = Math.hypot(
+      rec.position.x - passState.target.x,
+      rec.position.z - passState.target.z,
+    );
+    if (d < bestDist) {
+      bestDist = d;
+      best = rec;
+    }
+  }
+  if (best && best.id !== controlledId) {
+    clearSelection();
+    setControlledPlayer(best.id);
+  }
 }
 
 /** A side must hold the ball this long before the shape commits to attacking. */

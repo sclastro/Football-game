@@ -2,8 +2,8 @@ import { RigidBody } from "@react-three/rapier";
 
 // Pitch size. EVERY marking below is derived from these two numbers, so the
 // pitch can be resized without anything drifting out of proportion.
-const FIELD_LENGTH = 72; // along Z (goal lines at +/- 36)
-const FIELD_WIDTH = 46; // along X (touchlines at +/- 23)
+const FIELD_LENGTH = 80; // along Z (goal lines at +/- 40)
+const FIELD_WIDTH = 54; // along X (touchlines at +/- 27)
 const HALF_W = FIELD_WIDTH / 2;
 const HALF_L = FIELD_LENGTH / 2;
 
@@ -19,9 +19,16 @@ const CORNER_R = 1;
 // Safety geometry.
 const WALL_HEIGHT = 5;
 const WALL_THICKNESS = 2;
-const END_WALL_GAP = 4; // walls sit this far behind the goal lines
-const SIDE_WALL_GAP = 3; // and this far outside the touchlines
+const END_WALL_GAP = 6; // catch walls sit this far behind the goal lines
 const GROUND_SIZE = Math.max(FIELD_LENGTH, FIELD_WIDTH) * 2.4;
+/**
+ * Half-width of the gap left open in each goal-line board. Sized just wider
+ * than the goal itself (8.4 m, so 4.2 m each side) — any wider and a shot could
+ * slip past the post without hitting a board and without counting as a goal.
+ */
+const GOAL_MOUTH_HALF = 4.3;
+/** How lively the boards are. Enough to rebound, not enough to ping-pong. */
+const BOARD_BOUNCE = 0.55;
 
 const LINE = "#f4f7f4";
 const LINE_Y = 0.02;
@@ -196,7 +203,10 @@ export function Field() {
       <Stripes />
       <Markings />
 
-      {/* End walls sit BEHIND the goals so they never block the goal mouth. */}
+      <Perimeter />
+
+      {/* Far walls behind each goal, so a ball that beats the keeper is caught
+          by the netting rather than rolling into the stands. */}
       <RigidBody type="fixed" colliders="cuboid">
         <mesh position={[0, WALL_HEIGHT / 2, -HALF_L - END_WALL_GAP]} visible={false}>
           <boxGeometry args={[FIELD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS]} />
@@ -207,18 +217,39 @@ export function Field() {
           <boxGeometry args={[FIELD_WIDTH + WALL_THICKNESS * 2, WALL_HEIGHT, WALL_THICKNESS]} />
         </mesh>
       </RigidBody>
-      {/* Side walls sit outside the touchlines: pure safety nets. The ball
-          fully crosses the line first, so out-of-play detection can fire. */}
-      <RigidBody type="fixed" colliders="cuboid">
-        <mesh position={[-HALF_W - SIDE_WALL_GAP, WALL_HEIGHT / 2, 0]} visible={false}>
-          <boxGeometry args={[WALL_THICKNESS, WALL_HEIGHT, FIELD_LENGTH + 10]} />
-        </mesh>
-      </RigidBody>
-      <RigidBody type="fixed" colliders="cuboid">
-        <mesh position={[HALF_W + SIDE_WALL_GAP, WALL_HEIGHT / 2, 0]} visible={false}>
-          <boxGeometry args={[WALL_THICKNESS, WALL_HEIGHT, FIELD_LENGTH + 10]} />
-        </mesh>
-      </RigidBody>
+    </>
+  );
+}
+
+/**
+ * Boards around the field of play. There is no out of play in this game: the
+ * ball rebounds off the line it would have crossed, which is why the side walls
+ * sit exactly ON the touchline instead of a few metres outside it, and why the
+ * end walls are split into two panels that leave the goal mouth open.
+ *
+ * Players collide with the same boards, so nobody can run into the stands.
+ */
+function Perimeter() {
+  const panelW = HALF_W - GOAL_MOUTH_HALF;
+  const panelX = (GOAL_MOUTH_HALF + HALF_W) / 2;
+  const board = (key: string, x: number, z: number, sx: number, sz: number) => (
+    <RigidBody key={key} type="fixed" colliders="cuboid" restitution={BOARD_BOUNCE} friction={0.25}>
+      <mesh position={[x, WALL_HEIGHT / 2, z]} visible={false}>
+        <boxGeometry args={[sx, WALL_HEIGHT, sz]} />
+      </mesh>
+    </RigidBody>
+  );
+
+  return (
+    <>
+      {/* Touchlines. */}
+      {board('left', -HALF_W - WALL_THICKNESS / 2, 0, WALL_THICKNESS, FIELD_LENGTH + WALL_THICKNESS * 2)}
+      {board('right', HALF_W + WALL_THICKNESS / 2, 0, WALL_THICKNESS, FIELD_LENGTH + WALL_THICKNESS * 2)}
+      {/* Goal lines, either side of each goal mouth. */}
+      {board('nl', -panelX, -HALF_L - WALL_THICKNESS / 2, panelW, WALL_THICKNESS)}
+      {board('nr', panelX, -HALF_L - WALL_THICKNESS / 2, panelW, WALL_THICKNESS)}
+      {board('sl', -panelX, HALF_L + WALL_THICKNESS / 2, panelW, WALL_THICKNESS)}
+      {board('sr', panelX, HALF_L + WALL_THICKNESS / 2, panelW, WALL_THICKNESS)}
     </>
   );
 }

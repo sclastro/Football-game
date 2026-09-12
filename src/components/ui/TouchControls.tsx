@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { virtualInput, resetVirtualInput } from "@/game/systems/virtualInput";
 import { handleScreenTap } from "@/game/systems/selectionSystem";
+import { Minimap } from "./Minimap";
 
 const STICK_RADIUS = 70; // px — movement stick
 const DEAD_ZONE = 0.14;
 const EXPO = 1.35; // >1 = finer control near the centre
 const SPRINT_AT = 0.92; // full extension sprints
 
-const SHOOT_RADIUS = 58; // px — shoot/aim stick
-const PASS_SIZE = 76; // px — pass button
+const SHOOT_RADIUS = 58; // px — shoot/power circle
+const ACTION_SIZE = 72; // px — slide / sprint
+const FLICK_SIZE = 56; // px
 
 /** A pointer that moved less than this, for less than this long, is a tap. */
 const TAP_MAX_PX = 14;
@@ -26,10 +28,13 @@ interface StickState {
  * Touch controls.
  *
  * - LEFT half: dynamic movement joystick — touch anywhere and the stick appears
- *   under your thumb. A quick TAP (rather than a drag) instead selects the
- *   player you tapped, so selection works on both halves of the screen.
- * - RIGHT: a SHOOT stick you drag to aim and release to strike, and a PASS
- *   button that plays the ball to whoever you have selected.
+ *   under your thumb. A quick TAP (rather than a drag) selects the player you
+ *   tapped; tapping the same team-mate again passes to them and takes control.
+ * - RIGHT: SHOOT (drag out for power), SLIDE, SPRINT and FLICK.
+ *
+ * There is no PASS button and no SWITCH button any more: passing is the
+ * tap-tap gesture, and switching happens on its own the moment the opposition
+ * plays a pass.
  */
 export function TouchControls() {
   const [stick, setStick] = useState<StickState | null>(null);
@@ -130,7 +135,6 @@ export function TouchControls() {
               height: STICK_RADIUS * 2,
             }}
           >
-            {/* Base ring — lights up when sprinting */}
             <div
               className={`absolute inset-0 rounded-full backdrop-blur-sm transition-colors ${
                 sprinting
@@ -138,7 +142,6 @@ export function TouchControls() {
                   : "bg-white/10 ring-2 ring-white/30"
               }`}
             />
-            {/* Knob */}
             <div
               className="absolute rounded-full bg-white/80 shadow-lg"
               style={{
@@ -160,50 +163,113 @@ export function TouchControls() {
         onPointerUp={(e) => finishTap(e.clientX, e.clientY)}
       />
 
+      {/* Minimap, bottom centre, out of the way of both thumbs. */}
+      <div
+        className="pointer-events-none absolute bottom-0 left-1/2 -translate-x-1/2 p-3"
+        style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
+      >
+        <Minimap />
+      </div>
+
       {/* Action controls */}
       <div
-        className="pointer-events-none absolute bottom-0 right-0 flex items-end gap-3 p-5"
-        style={{ paddingBottom: "calc(1.75rem + env(safe-area-inset-bottom))" }}
+        className="pointer-events-none absolute bottom-0 right-0 flex items-end gap-3 p-4"
+        style={{ paddingBottom: "calc(1.5rem + env(safe-area-inset-bottom))" }}
       >
-        <PassButton />
-        <ShootStick />
+        <div className="flex flex-col items-center gap-3">
+          <ActionButton
+            label="SLIDE"
+            size={ACTION_SIZE}
+            tone="bg-rose-600/85 ring-white/40"
+            activeTone="bg-rose-400/90 ring-white/80"
+            onPress={() => {
+              virtualInput.slideRequested = true;
+            }}
+          />
+          <ActionButton
+            label="SPRINT"
+            size={ACTION_SIZE}
+            tone="bg-sky-600/85 ring-white/40"
+            activeTone="bg-sky-400/90 ring-white/80"
+            hold
+            onPress={() => {
+              virtualInput.sprint = true;
+            }}
+            onRelease={() => {
+              virtualInput.sprint = false;
+            }}
+          />
+        </div>
+        <div className="flex flex-col items-center gap-3">
+          <ActionButton
+            label="FLICK"
+            size={FLICK_SIZE}
+            tone="bg-violet-600/80 ring-white/40"
+            activeTone="bg-violet-400/90 ring-white/80"
+            onPress={() => {
+              virtualInput.flickRequested = true;
+            }}
+          />
+          <ShootCircle />
+        </div>
       </div>
     </>
   );
 }
 
-/** Taps play the ball to the selected team-mate (or the best option in front). */
-function PassButton() {
+interface ActionButtonProps {
+  label: string;
+  size: number;
+  tone: string;
+  activeTone: string;
+  /** Sprint is held rather than tapped, so it needs a release callback. */
+  hold?: boolean;
+  onPress: () => void;
+  onRelease?: () => void;
+}
+
+function ActionButton({
+  label,
+  size,
+  tone,
+  activeTone,
+  onPress,
+  onRelease,
+}: ActionButtonProps) {
   const [pressed, setPressed] = useState(false);
+  const release = () => {
+    if (!pressed) return;
+    setPressed(false);
+    onRelease?.();
+  };
   return (
     <button
-      className={`pointer-events-auto mb-2 touch-none select-none rounded-full font-black text-white shadow-xl ring-2 backdrop-blur-sm transition ${
-        pressed
-          ? "scale-90 bg-sky-400/90 ring-white/80 brightness-125"
-          : "bg-sky-500/85 ring-white/40"
+      className={`pointer-events-auto touch-none select-none rounded-full font-black text-white shadow-xl ring-2 backdrop-blur-sm transition ${
+        pressed ? `scale-90 brightness-125 ${activeTone}` : tone
       }`}
-      style={{ width: PASS_SIZE, height: PASS_SIZE, fontSize: PASS_SIZE * 0.19 }}
+      style={{ width: size, height: size, fontSize: size * 0.185 }}
       onPointerDown={(e) => {
         e.preventDefault();
         e.stopPropagation();
         setPressed(true);
-        virtualInput.passRequested = true;
+        onPress();
       }}
-      onPointerUp={() => setPressed(false)}
-      onPointerCancel={() => setPressed(false)}
-      onPointerLeave={() => setPressed(false)}
+      onPointerUp={release}
+      onPointerCancel={release}
+      onPointerLeave={release}
     >
-      PASS
+      {label}
     </button>
   );
 }
 
 /**
- * Fixed-base aim stick. Drag from the pad to aim, release to strike. The drag
- * length sets the power (short = flat drive, long = arcing shot) and the drag
- * direction sets where the ball goes, so you can shoot right while running left.
+ * The shoot circle. Dragging out of it charges the strike; the distance you
+ * drag is the distance the ball will travel, drawn as an arrow on the pitch in
+ * front of your player. Direction is never taken from the drag — it is always
+ * wherever the player is already facing.
  */
-function ShootStick() {
+function ShootCircle() {
   const pid = useRef<number | null>(null);
   const center = useRef({ x: 0, y: 0 });
   const [knob, setKnob] =
@@ -219,24 +285,14 @@ function ShootStick() {
     }
     const mag = Math.min(1, dist / SHOOT_RADIUS);
     setKnob({ dx, dy, mag });
-    const nd = Math.hypot(dx, dy) || 1;
     virtualInput.shootHeld = true;
-    virtualInput.shootAimX = (dx / nd) * mag;
-    virtualInput.shootAimY = (dy / nd) * mag;
+    virtualInput.shootAimX = dx;
+    virtualInput.shootAimY = dy;
     virtualInput.shootPower = mag;
   };
 
   const end = (k: { dx: number; dy: number; mag: number } | null) => {
-    const mag = k ? k.mag : 0;
-    if (k && mag > 0.12) {
-      const nd = Math.hypot(k.dx, k.dy) || 1;
-      virtualInput.fireAimX = k.dx / nd;
-      virtualInput.fireAimY = k.dy / nd;
-    } else {
-      virtualInput.fireAimX = 0;
-      virtualInput.fireAimY = 0;
-    }
-    virtualInput.firePower = mag;
+    virtualInput.firePower = k ? k.mag : 0;
     virtualInput.shootFired = true;
     virtualInput.shootHeld = false;
     virtualInput.shootAimX = 0;
@@ -247,7 +303,7 @@ function ShootStick() {
   };
 
   const power = knob ? knob.mag : 0;
-  const shooting = power > 0.55; // red once it's a real strike
+  const shooting = power > 0.55; // hot once it's a real strike
 
   return (
     <div
@@ -272,17 +328,16 @@ function ShootStick() {
         if (pid.current === e.pointerId) end(knob);
       }}
     >
-      {/* Base ring — tints from red through to a hot strike with power */}
       <div
         className={`absolute inset-0 rounded-full backdrop-blur-sm transition-colors ${
           shooting
-            ? "bg-red-500/40 ring-4 ring-red-300/90"
+            ? "bg-amber-400/45 ring-4 ring-amber-200/90"
             : power > 0
               ? "bg-orange-500/30 ring-2 ring-orange-300/80"
-              : "bg-red-500/25 ring-2 ring-white/40"
+              : "bg-emerald-600/40 ring-2 ring-white/45"
         }`}
       />
-      {/* Power arc around the rim */}
+      {/* Power arc around the rim: how far the ball is going to travel. */}
       {power > 0 && (
         <div
           className="pointer-events-none absolute inset-[-6px] rounded-full"
@@ -293,7 +348,6 @@ function ShootStick() {
           }}
         />
       )}
-      {/* Label / knob */}
       {knob ? (
         <div
           className="pointer-events-none absolute rounded-full bg-white/85 shadow-lg"

@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import * as THREE from "three";
 import { virtualInput } from "./virtualInput";
+import { tutorialState } from "./tutorialSystem";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 
 const MAX_CHARGE_TIME = PHYSICS_CONFIG.ball.maxChargeTime;
@@ -13,8 +14,12 @@ const MOVE_KEYS = {
 } as const;
 
 const SPRINT_KEYS = ["ShiftLeft", "ShiftRight"];
-const SHOOT_KEYS = ["Space"];
+// J is a second shoot key so the tutorial can own Space for "next lesson"
+// without leaving keyboard players unable to shoot while they are in it.
+const SHOOT_KEYS = ["Space", "KeyJ"];
 const PASS_KEYS = ["KeyE"];
+const FLICK_KEYS = ["KeyQ"];
+const SLIDE_KEYS = ["KeyF", "ControlLeft", "ControlRight"];
 
 export interface InputState {
   /** Normalized movement direction on the XZ plane (camera-relative forward = -Z). */
@@ -28,11 +33,10 @@ export interface InputState {
   shootReleased: boolean;
   /** True only on the single frame the pass key is pressed (edge trigger). */
   passPressed: boolean;
-  /** When true, shoot toward (shootAimX, shootAimZ) instead of the facing dir. */
-  hasShootAim: boolean;
-  /** World-space aim direction for the shot (touch stick drag). */
-  shootAimX: number;
-  shootAimZ: number;
+  /** True only on the single frame the rainbow-flick key is pressed. */
+  flickPressed: boolean;
+  /** True only on the single frame the slide key is pressed. */
+  slidePressed: boolean;
 }
 
 /**
@@ -44,6 +48,8 @@ export function useInputSystem() {
   const pressedKeys = useRef(new Set<string>());
   const prevShootHeld = useRef(false);
   const prevPassHeld = useRef(false);
+  const prevFlickHeld = useRef(false);
+  const prevSlideHeld = useRef(false);
   const shootPressedAt = useRef<number | null>(null);
   const stateRef = useRef<InputState>({
     moveDirection: new THREE.Vector2(0, 0),
@@ -52,9 +58,8 @@ export function useInputSystem() {
     shootCharge: 0,
     shootReleased: false,
     passPressed: false,
-    hasShootAim: false,
-    shootAimX: 0,
-    shootAimZ: 0,
+    flickPressed: false,
+    slidePressed: false,
   });
 
   useEffect(() => {
@@ -92,12 +97,14 @@ export function useInputSystem() {
     state.sprinting = SPRINT_KEYS.some((k) => keys.has(k)) || virtualInput.sprint;
 
     // Keyboard shoot: hold Space to charge, release to fire along facing.
-    const shootHeld = SHOOT_KEYS.some((k) => keys.has(k));
+    // The tutorial owns Space for "next lesson", so while it is running only J
+    // shoots — otherwise every step you advanced would also blast the ball.
+    const shootKeys = tutorialState.active
+      ? SHOOT_KEYS.filter((k) => k !== "Space")
+      : SHOOT_KEYS;
+    const shootHeld = shootKeys.some((k) => keys.has(k));
     const now = performance.now();
     state.shootReleased = false;
-    state.hasShootAim = false;
-    state.shootAimX = 0;
-    state.shootAimZ = 0;
 
     if (shootHeld && !prevShootHeld.current) {
       shootPressedAt.current = now;
@@ -118,26 +125,35 @@ export function useInputSystem() {
 
     prevShootHeld.current = shootHeld;
 
-    // Touch SHOOT stick: released this frame → fire with drag power + aim.
-    // Screen (right=+x, down=+y) maps to world (x = down, z = -right), matching
-    // the movement stick so a drag up shoots up the pitch, right shoots right.
+    // Touch SHOOT circle: released this frame → fire with the drag's power. The
+    // drag length is the ONLY thing it contributes; direction comes from the
+    // player's facing, in both control schemes.
     if (virtualInput.shootFired) {
       state.shootReleased = true;
       state.shootCharge = virtualInput.firePower * MAX_CHARGE_TIME;
-      const ax = virtualInput.fireAimX;
-      const ay = virtualInput.fireAimY;
-      if (Math.hypot(ax, ay) > 0.05) {
-        state.hasShootAim = true;
-        state.shootAimX = ay;
-        state.shootAimZ = -ax;
-      }
       virtualInput.shootFired = false;
+    }
+    // Hold state has to include the touch circle too, or the on-pitch power
+    // arrow never appears for touch players.
+    state.shootHeld = state.shootHeld || virtualInput.shootHeld;
+    if (virtualInput.shootHeld) {
+      state.shootCharge = virtualInput.shootPower * MAX_CHARGE_TIME;
     }
 
     const passHeld = PASS_KEYS.some((k) => keys.has(k)) || virtualInput.passRequested;
     state.passPressed = passHeld && !prevPassHeld.current;
     prevPassHeld.current = passHeld;
     virtualInput.passRequested = false; // consume the tap
+
+    const flickHeld = FLICK_KEYS.some((k) => keys.has(k)) || virtualInput.flickRequested;
+    state.flickPressed = flickHeld && !prevFlickHeld.current;
+    prevFlickHeld.current = flickHeld;
+    virtualInput.flickRequested = false;
+
+    const slideHeld = SLIDE_KEYS.some((k) => keys.has(k)) || virtualInput.slideRequested;
+    state.slidePressed = slideHeld && !prevSlideHeld.current;
+    prevSlideHeld.current = slideHeld;
+    virtualInput.slideRequested = false;
 
     return state;
   };

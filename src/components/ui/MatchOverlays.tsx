@@ -88,8 +88,8 @@ export function ShootoutIntroOverlay() {
       </div>
       <ScoreLine />
       <p className="mb-5 text-sm leading-relaxed text-white/60">
-        Five kicks each. You choose where to shoot — and which way to dive when
-        you're in goal.
+        Five kicks each, from behind the goal. Drag your circle to the spot you
+        want — small when you shoot, much bigger when you keep.
       </p>
       <button
         className="rounded-full bg-yellow-400 px-8 py-2.5 font-black text-emerald-950 hover:bg-yellow-300 active:scale-95"

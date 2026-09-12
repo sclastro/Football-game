@@ -29,6 +29,26 @@ const _p = new THREE.Vector3()
 const PICK_HEIGHT = 1.0
 
 /**
+ * Project a world point to viewport pixels, or null if the scene is not live
+ * yet. Used by the shootout, which draws its aiming circles as HTML directly
+ * over the real goal mouth rather than guessing where it is on screen.
+ */
+export function projectToScreen(
+  x: number,
+  y: number,
+  z: number,
+): { x: number; y: number } | null {
+  const { camera, canvas } = picker
+  if (!camera || !canvas) return null
+  const rect = canvas.getBoundingClientRect()
+  _p.set(x, y, z).project(camera)
+  return {
+    x: rect.left + ((_p.x + 1) / 2) * rect.width,
+    y: rect.top + ((1 - _p.y) / 2) * rect.height,
+  }
+}
+
+/**
  * The nearest selectable home outfielder to a screen point, or null if nothing
  * is within `maxPx`. Players behind the camera are ignored.
  */

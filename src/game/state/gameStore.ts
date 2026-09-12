@@ -1,18 +1,25 @@
 import { create } from "zustand";
 import type {
   ControlMode,
+  GameMode,
   MatchState,
-  PenaltyDirection,
   ShootoutState,
   Side,
 } from "./types";
 import type { Difficulty } from "@/game/data/difficulty";
 import {
-  aiPenaltyChoice,
+  aiPenaltyAim,
+  aiPenaltyDive,
   resolvePenalty,
 } from "@/game/systems/penaltySystem";
-import { DEFAULT_HOME_TEAM, TEAM_IDS } from "@/game/data/teams";
-import { autoPickSquad, benchFor } from "@/game/data/rosters";
+import { DEFAULT_HOME_TEAM } from "@/game/data/teams";
+import { autoPickSquad, benchFor, remapSquad } from "@/game/data/squad";
+import {
+  defaultFormationId,
+  formationById,
+} from "@/game/data/formations";
+import { drawOpponent, opponentFormationId } from "@/game/data/tactics";
+import { TUTORIAL_STEPS } from "@/game/data/tutorial";
 
 /** Selectable match lengths, in seconds. */
 export const DURATION_OPTIONS = [120, 180, 300] as const;
@@ -24,7 +31,7 @@ export const ENTRANCE_DURATION = 7;
 /** Kicks each side takes before sudden death. */
 export const SHOOTOUT_KICKS = 5;
 /** Seconds the run-up, strike and save animation plays for. */
-export const PENALTY_RESOLVE_TIME = 2.2;
+export const PENALTY_RESOLVE_TIME = 2.4;
 
 /** Extra time added when the score is level, keyed by regulation length. */
 const EXTRA_TIME: Record<number, number> = {
@@ -38,11 +45,6 @@ function extraTimeFor(duration: number): number {
 }
 
 const now = () => performance.now() / 1000;
-
-function randomOpponent(homeTeamId: string): string {
-  const others = TEAM_IDS.filter((id) => id !== homeTeamId);
-  return others[Math.floor(Math.random() * others.length)];
-}
 
 function freshShootout(): ShootoutState {
   return {
@@ -74,7 +76,6 @@ function shootoutDecided(s: ShootoutState): boolean {
   const h = shootoutGoals(s, "home");
   const a = shootoutGoals(s, "away");
   const rounds = Math.min(taken(s, "home"), taken(s, "away"));
-  // Both sides have completed the same number of kicks and are level or not.
   if (taken(s, "home") !== taken(s, "away")) return false;
   if (rounds < SHOOTOUT_KICKS) return false;
   return h !== a;
@@ -82,15 +83,27 @@ function shootoutDecided(s: ShootoutState): boolean {
 
 interface GameActions {
   setScreen: (screen: MatchState["screen"]) => void;
+  setMode: (mode: GameMode) => void;
   setControlMode: (mode: ControlMode) => void;
   setDifficulty: (d: Difficulty) => void;
   setMatchDuration: (seconds: number) => void;
-  /** Pick your nation and move on to squad selection. */
+  /** Pick your nation and move on to the squad editor. */
   chooseTeam: (teamId: string) => void;
-  /** Replace the starting eight (slot-aligned to FORMATION). */
-  setHomeSquad: (squad: string[]) => void;
-  /** Kick off: draw an opponent, run the entrance, then play. */
+  /** Change your shape, carrying the players you already picked across. */
+  setFormation: (formationId: string) => void;
+  /** Put a player into one slot of the starting eleven. */
+  assignSlot: (slotIndex: number, playerId: string) => void;
+  /** Reset the eleven to the best available. */
+  autoPick: () => void;
+  /** Draw an opponent and show the scouting report. */
+  scoutOpponent: () => void;
+  /** Kick off: run the entrance, then play. */
   startMatch: () => void;
+  /** Jump straight into the standalone shootout. */
+  startShootout: () => void;
+  /** Enter the training ground. */
+  startTutorial: () => void;
+  setTutorialStep: (step: number) => void;
   /** Entrance finished (or was skipped) — start the match. */
   beginPlay: () => void;
   /** Advance the match clock by dt seconds, handling every end-of-period case. */
@@ -103,8 +116,8 @@ interface GameActions {
   beginExtraTime: () => void;
   /** Shootout intro acknowledged — start taking kicks. */
   beginShootout: () => void;
-  /** The user picked a direction (to shoot, or to dive). */
-  penaltyChoice: (dir: PenaltyDirection) => void;
+  /** The user committed their circle: shooting point, or keeper's reach. */
+  penaltyAim: (x: number, y: number) => void;
   /** Drive the shootout's resolving → result → next-kick timeline. */
   tickShootout: () => void;
   /** Play the same fixture again from the entrance. */
@@ -112,15 +125,19 @@ interface GameActions {
   backToMenu: () => void;
 }
 
-const DEFAULT_SQUAD = autoPickSquad(DEFAULT_HOME_TEAM);
+const DEFAULT_FORMATION = defaultFormationId(DEFAULT_HOME_TEAM);
+const DEFAULT_SQUAD = autoPickSquad(DEFAULT_HOME_TEAM, DEFAULT_FORMATION);
 
 const initialState: MatchState = {
   screen: "title",
+  mode: "match",
   controlMode: "joystick",
   difficulty: "normal",
   matchDuration: DEFAULT_DURATION,
   homeTeamId: DEFAULT_HOME_TEAM,
-  awayTeamId: randomOpponent(DEFAULT_HOME_TEAM),
+  awayTeamId: "ARG",
+  homeFormationId: DEFAULT_FORMATION,
+  awayFormationId: defaultFormationId("ARG"),
   score: { home: 0, away: 0 },
   clock: DEFAULT_DURATION,
   phase: "entrance",
@@ -135,51 +152,130 @@ const initialState: MatchState = {
   entranceUntil: 0,
   extraTimeActive: false,
   shootout: null,
+  tutorialStep: 0,
 };
+
+/** Draw the opposition and set up their shape, squad and bench. */
+function drawFixture(homeTeamId: string, difficulty: Difficulty) {
+  const awayTeamId = drawOpponent(homeTeamId, difficulty);
+  const awayFormationId = opponentFormationId(awayTeamId, difficulty);
+  const awaySquad = autoPickSquad(awayTeamId, awayFormationId);
+  return {
+    awayTeamId,
+    awayFormationId,
+    awaySquad,
+    awayBench: benchFor(awayTeamId, awaySquad),
+  };
+}
 
 export const useGameStore = create<MatchState & GameActions>((set) => ({
   ...initialState,
 
   setScreen: (screen) => set({ screen }),
+  setMode: (mode) => set({ mode }),
   setControlMode: (mode) => set({ controlMode: mode }),
   setDifficulty: (difficulty) => set({ difficulty }),
   setMatchDuration: (matchDuration) => set({ matchDuration }),
 
   chooseTeam: (teamId) =>
     set(() => {
-      const squad = autoPickSquad(teamId);
+      const formationId = defaultFormationId(teamId);
+      const squad = autoPickSquad(teamId, formationId);
       return {
         homeTeamId: teamId,
+        homeFormationId: formationId,
         homeSquad: squad,
         homeBench: benchFor(teamId, squad),
-        screen: "squadSelect" as const,
+        screen: "squad" as const,
       };
     }),
 
-  setHomeSquad: (squad) =>
-    set((s) => ({ homeSquad: squad, homeBench: benchFor(s.homeTeamId, squad) })),
+  setFormation: (formationId) =>
+    set((s) => {
+      if (formationId === s.homeFormationId) return s;
+      const squad = remapSquad(s.homeSquad, formationById(formationId));
+      return {
+        homeFormationId: formationId,
+        homeSquad: squad,
+        homeBench: benchFor(s.homeTeamId, squad),
+      };
+    }),
+
+  assignSlot: (slotIndex, playerId) =>
+    set((s) => {
+      const squad = [...s.homeSquad];
+      if (slotIndex < 0 || slotIndex >= squad.length) return s;
+      // If the incoming player is already on the pitch, the two swap places
+      // rather than one of them vanishing.
+      const existing = squad.indexOf(playerId);
+      if (existing >= 0) {
+        squad[existing] = squad[slotIndex];
+      }
+      squad[slotIndex] = playerId;
+      return { homeSquad: squad, homeBench: benchFor(s.homeTeamId, squad) };
+    }),
+
+  autoPick: () =>
+    set((s) => {
+      const squad = autoPickSquad(s.homeTeamId, s.homeFormationId);
+      return { homeSquad: squad, homeBench: benchFor(s.homeTeamId, squad) };
+    }),
+
+  scoutOpponent: () =>
+    set((s) => ({
+      ...drawFixture(s.homeTeamId, s.difficulty),
+      screen: "briefing" as const,
+    })),
 
   startMatch: () =>
+    set((s) => ({
+      screen: "playing" as const,
+      mode: "match" as const,
+      score: { home: 0, away: 0 },
+      clock: s.matchDuration,
+      phase: "entrance" as const,
+      entranceUntil: now() + ENTRANCE_DURATION,
+      goalFlashUntil: 0,
+      lastScorer: null,
+      extraTimeActive: false,
+      shootout: null,
+      // Start on the most advanced outfielder.
+      controlledPlayerId: s.homeSquad[s.homeSquad.length - 1],
+      resetNonce: s.resetNonce + 1,
+    })),
+
+  startShootout: () =>
+    set((s) => ({
+      ...drawFixture(s.homeTeamId, s.difficulty),
+      screen: "playing" as const,
+      mode: "shootout" as const,
+      score: { home: 0, away: 0 },
+      phase: "shootout" as const,
+      shootout: freshShootout(),
+      extraTimeActive: false,
+      resetNonce: s.resetNonce + 1,
+    })),
+
+  startTutorial: () =>
+    set((s) => ({
+      ...drawFixture(s.homeTeamId, s.difficulty),
+      screen: "playing" as const,
+      mode: "tutorial" as const,
+      phase: "live" as const,
+      clock: 9999,
+      score: { home: 0, away: 0 },
+      tutorialStep: 0,
+      shootout: null,
+      extraTimeActive: false,
+      controlledPlayerId: s.homeSquad[s.homeSquad.length - 1],
+      resetNonce: s.resetNonce + 1,
+    })),
+
+  setTutorialStep: (step) =>
     set((s) => {
-      const awayTeamId = randomOpponent(s.homeTeamId);
-      const awaySquad = autoPickSquad(awayTeamId);
-      return {
-        screen: "playing" as const,
-        awayTeamId,
-        awaySquad,
-        awayBench: benchFor(awayTeamId, awaySquad),
-        score: { home: 0, away: 0 },
-        clock: s.matchDuration,
-        phase: "entrance" as const,
-        entranceUntil: now() + ENTRANCE_DURATION,
-        goalFlashUntil: 0,
-        lastScorer: null,
-        extraTimeActive: false,
-        shootout: null,
-        // Start on the most advanced outfielder.
-        controlledPlayerId: s.homeSquad[s.homeSquad.length - 1],
-        resetNonce: s.resetNonce + 1,
-      };
+      const clamped = Math.max(0, Math.min(TUTORIAL_STEPS.length - 1, step));
+      if (clamped === s.tutorialStep) return s;
+      return { tutorialStep: clamped, resetNonce: s.resetNonce + 1 };
     }),
 
   beginPlay: () =>
@@ -191,18 +287,17 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
 
   tickClock: (dt) =>
     set((s) => {
+      if (s.mode !== "match") return s;
       if (s.phase !== "live" && s.phase !== "extraTime") return s;
       const clock = Math.max(0, s.clock - dt);
       if (clock > 0) return { clock };
 
       const level = s.score.home === s.score.away;
       if (s.phase === "live") {
-        // End of regulation: level goes to extra time, otherwise full time.
         return level
           ? { clock, phase: "extraTimeBreak" as const }
           : { clock, phase: "fulltime" as const };
       }
-      // End of extra time: level goes to penalties.
       return level
         ? { clock, phase: "shootoutIntro" as const }
         : { clock, phase: "fulltime" as const };
@@ -211,6 +306,10 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
   scoreGoal: (side) =>
     set((s) => {
       if (s.phase !== "live" && s.phase !== "extraTime") return s;
+      if (s.mode === "tutorial") {
+        // The training ground keeps a tally but never stops play.
+        return { score: { ...s.score, [side]: s.score[side] + 1 } };
+      }
       return {
         score: { ...s.score, [side]: s.score[side] + 1 },
         goalFlashUntil: now() + GOAL_FLASH_DURATION,
@@ -238,21 +337,22 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
   beginShootout: () =>
     set({ phase: "shootout" as const, shootout: freshShootout() }),
 
-  penaltyChoice: (dir) =>
+  penaltyAim: (x, y) =>
     set((s) => {
       const so = s.shootout;
       if (!so || so.stage !== "choosing") return s;
       // Home is always the user's side: they shoot on their turn and keep goal
-      // on the opponent's turn. Whichever role the user isn't playing is chosen
-      // by the AI, and everything else — height, timing, accuracy — is rolled.
+      // on the opponent's turn. The other circle is placed by the AI, and the
+      // ball's actual landing point is rolled from whichever aim was the shot.
       const userShooting = so.turn === "home";
-      const aiDir = aiPenaltyChoice(s.difficulty);
-      const kick = resolvePenalty(
-        userShooting ? dir : aiDir,
-        userShooting ? aiDir : dir,
-        s.difficulty,
-        !userShooting,
-      );
+      let kick;
+      if (userShooting) {
+        const dive = aiPenaltyDive(s.difficulty, { x, y });
+        kick = resolvePenalty(x, y, dive.x, dive.y, s.difficulty, false);
+      } else {
+        const aim = aiPenaltyAim(s.difficulty);
+        kick = resolvePenalty(aim.x, aim.y, x, y, s.difficulty, true);
+      }
       return {
         shootout: {
           ...so,
@@ -269,7 +369,6 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
       if (!so || so.stage === "choosing" || now() < so.nextAt) return s;
 
       if (so.stage === "resolving") {
-        // Commit the result and hold on it briefly.
         const results = {
           home: [...so.results.home],
           away: [...so.results.away],
@@ -281,12 +380,11 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
             ...so,
             results,
             stage: "result" as const,
-            nextAt: now() + 1.2,
+            nextAt: now() + 1.4,
           },
         };
       }
 
-      // stage === 'result': either the shootout is decided, or take the next kick.
       if (shootoutDecided(so)) {
         return { phase: "fulltime" as const };
       }
@@ -297,7 +395,6 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
         home: [...so.results.home],
         away: [...so.results.away],
       };
-      // Sudden death appends rounds beyond the initial five.
       while (results.home.length <= nextRound) results.home.push(null);
       while (results.away.length <= nextRound) results.away.push(null);
       return {
@@ -315,18 +412,28 @@ export const useGameStore = create<MatchState & GameActions>((set) => ({
     }),
 
   rematch: () =>
-    set((s) => ({
-      score: { home: 0, away: 0 },
-      clock: s.matchDuration,
-      phase: "entrance" as const,
-      entranceUntil: now() + ENTRANCE_DURATION,
-      goalFlashUntil: 0,
-      lastScorer: null,
-      extraTimeActive: false,
-      shootout: null,
-      controlledPlayerId: s.homeSquad[s.homeSquad.length - 1],
-      resetNonce: s.resetNonce + 1,
-    })),
+    set((s) => {
+      if (s.mode === "shootout") {
+        return {
+          score: { home: 0, away: 0 },
+          phase: "shootout" as const,
+          shootout: freshShootout(),
+          resetNonce: s.resetNonce + 1,
+        };
+      }
+      return {
+        score: { home: 0, away: 0 },
+        clock: s.matchDuration,
+        phase: "entrance" as const,
+        entranceUntil: now() + ENTRANCE_DURATION,
+        goalFlashUntil: 0,
+        lastScorer: null,
+        extraTimeActive: false,
+        shootout: null,
+        controlledPlayerId: s.homeSquad[s.homeSquad.length - 1],
+        resetNonce: s.resetNonce + 1,
+      };
+    }),
 
   backToMenu: () =>
     set({ screen: "title", phase: "entrance", shootout: null }),

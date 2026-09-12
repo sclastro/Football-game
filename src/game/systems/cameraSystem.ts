@@ -19,13 +19,19 @@ const PENALTY_SPOT = FIELD_DIMENSIONS.penaltySpot;
 // gently along the pitch length (Z) with the controlled player but never
 // rotates, so the whole match stays legible. On a goal it dollies in on the
 // scorer for a celebration beat, then pulls back out when play resumes.
-const SIDE_X = 42; // distance out along +X (near stand is removed, so view is clear)
-const HEIGHT = 21;
-const FOLLOW_Z = 0.5; // how much the camera tracks the player along the pitch
-const LOOK_X = -4; // aim slightly past the centre toward the far side
-const LOOK_HEIGHT = 1.5;
-const POS_SMOOTH = 3.5;
-const LOOK_SMOOTH = 5;
+const SIDE_X = 22; // distance out along +X (near stand is removed, so view is clear)
+const HEIGHT = 13;
+/**
+ * How much the camera tracks the player along the pitch. It used to be half,
+ * which at this distance would leave you running off the edge of your own shot;
+ * now it follows almost exactly, and the minimap covers the rest of the pitch.
+ */
+const FOLLOW_Z = 0.95;
+/** How much the aim point drifts across the pitch with the player. */
+const FOLLOW_X = 0.35;
+const LOOK_HEIGHT = 1.4;
+const POS_SMOOTH = 4.5;
+const LOOK_SMOOTH = 6;
 
 // Goal-celebration dolly: quickly push in low and close on the scorer.
 const CELEB_SIDE_FROM = 30;
@@ -33,6 +39,31 @@ const CELEB_SIDE_TO = 16;
 const CELEB_HEIGHT_FROM = 14;
 const CELEB_HEIGHT_TO = 7;
 const CELEB_SMOOTH = 6;
+
+/**
+ * Shootout camera: the broadcast position behind the goal being shot at.
+ *
+ * It has to clear the end stand, whose seating deck tops out around y = 8.1 and
+ * whose roof hangs at about y = 9.85 — sitting at ground level behind the goal
+ * would put the camera inside a block of seats. So it looks down over the back
+ * of the stand instead, on a long lens, which is exactly where the real camera
+ * for this shot lives.
+ */
+export const SHOOTOUT_CAM_HEIGHT = 8.8;
+export const SHOOTOUT_CAM_BACK = 8.5;
+/** Tight lens for the shootout; the match uses the wide one. */
+const SHOOTOUT_FOV = 30;
+const MATCH_FOV = 50;
+
+/** Ease the lens between the two framings without a visible cut. */
+function setFov(camera: THREE.Camera, target: number, delta: number): void {
+  const cam = camera as THREE.PerspectiveCamera;
+  if (!cam.isPerspectiveCamera) return;
+  const next = THREE.MathUtils.lerp(cam.fov, target, 1 - Math.exp(-6 * delta));
+  if (Math.abs(next - cam.fov) < 0.01) return;
+  cam.fov = next;
+  cam.updateProjectionMatrix();
+}
 
 // Camera smoothing state is module-level: a single rig drives the one shared
 // camera, so control hops between players never snap it.
@@ -72,7 +103,7 @@ export function CameraRig() {
     focusPoint(_target);
     const z = _target.z * FOLLOW_Z;
     camera.position.set(SIDE_X, HEIGHT, z);
-    _currentLook.set(LOOK_X, LOOK_HEIGHT, z);
+    _currentLook.set(_target.x * FOLLOW_X, LOOK_HEIGHT, z);
     camera.lookAt(_currentLook);
     initialized = true;
     return () => {
@@ -82,6 +113,11 @@ export function CameraRig() {
 
   useFrame((_, delta) => {
     const st = useGameStore.getState();
+    // Every path except the shootout uses the wide match lens; the shootout
+    // branch overrides this before it returns.
+    if (st.phase !== "shootout" && st.phase !== "shootoutIntro") {
+      setFov(camera, MATCH_FOV, delta);
+    }
 
     // Entrance: a low lateral sweep across the two lines, then pull back out to
     // the broadcast position as the players break for kickoff.
@@ -98,7 +134,7 @@ export function CameraRig() {
         _desiredLook.set(THREE.MathUtils.lerp(-10, 10, sweep), 1.5, 0);
       } else {
         _desiredPos.set(SIDE_X, HEIGHT, 0);
-        _desiredLook.set(LOOK_X, LOOK_HEIGHT, 0);
+        _desiredLook.set(0, LOOK_HEIGHT, 0);
       }
       const t = 1 - Math.exp(-2.6 * delta);
       camera.position.lerp(_desiredPos, t);
@@ -107,24 +143,19 @@ export function CameraRig() {
       return;
     }
 
-    // Shootout: a wide diagonal from behind and to one side of the taker, so
-    // the net, the goal frame and the taker are all in frame at once — and so
-    // the shot's direction can't be read off the camera before it's struck.
+    // Shootout: directly behind the keeper, looking back out through the goal
+    // at the taker. Dead centre and identical for every kick, so the camera can
+    // never hint at which way the ball or the dive is going — and so the goal
+    // mouth sits square on screen, which is what the aiming circles are drawn
+    // over.
     if (st.phase === "shootout" || st.phase === "shootoutIntro") {
       const taker = st.shootout?.turn ?? "home";
       const attackSign = taker === "home" ? -1 : 1;
       const goalZ = attackSign * HALF_L;
       const spotZ = goalZ - attackSign * PENALTY_SPOT;
-      // Offset to the side rather than dead centre. The side alternates with the
-      // round so consecutive kicks don't look identical.
-      const side = (st.shootout?.round ?? 0) % 2 === 0 ? 1 : -1;
-      _desiredPos.set(
-        side * 11,
-        5.6,
-        spotZ - attackSign * -13,
-      );
-      // Look at a point just in front of the goal line, between spot and net.
-      _desiredLook.set(side * 1.5, 1.5, goalZ + attackSign * -1.5);
+      _desiredPos.set(0, SHOOTOUT_CAM_HEIGHT, goalZ + attackSign * SHOOTOUT_CAM_BACK);
+      _desiredLook.set(0, 1.0, THREE.MathUtils.lerp(goalZ, spotZ, 0.45));
+      setFov(camera, SHOOTOUT_FOV, delta);
       const t = 1 - Math.exp(-CELEB_SMOOTH * delta);
       camera.position.lerp(_desiredPos, t);
       _currentLook.lerp(_desiredLook, t);
@@ -170,7 +201,7 @@ export function CameraRig() {
     focusPoint(_target);
     const z = _target.z * FOLLOW_Z;
     _desiredPos.set(SIDE_X, HEIGHT, z);
-    _desiredLook.set(LOOK_X, LOOK_HEIGHT, z);
+    _desiredLook.set(_target.x * FOLLOW_X, LOOK_HEIGHT, z);
     if (!initialized) {
       camera.position.copy(_desiredPos);
       _currentLook.copy(_desiredLook);

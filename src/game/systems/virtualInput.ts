@@ -9,23 +9,26 @@ export const virtualInput = {
   moveX: 0,
   moveY: 0,
   sprint: false,
-  // Right SHOOT stick: drag to aim, release to kick. A gentle drag is a short
-  // pass, a big drag is a shot — one control does both.
+  /**
+   * Right SHOOT circle. Dragging it sets POWER ONLY — the further you pull, the
+   * further the ball travels, and the on-pitch arrow shows exactly how far. The
+   * direction is always the way your player is facing, so a drag to the right
+   * while running left still strikes the ball to the left.
+   */
   shootHeld: false,
-  /** Live screen-space aim while dragging (right/down positive), for the UI. */
+  /** Live screen-space drag offset while aiming, for drawing the stick. */
   shootAimX: 0,
   shootAimY: 0,
   /** Live 0..1 drag length while aiming, used to draw the in-world preview. */
   shootPower: 0,
-  /** One-shot: the shoot stick was released this frame. */
+  /** One-shot: the shoot circle was released this frame. */
   shootFired: false,
   /** Power 0..1 from the drag distance at release. */
   firePower: 0,
-  /** Normalized screen-space aim direction captured at release. */
-  fireAimX: 0,
-  fireAimY: 0,
-  /** Legacy keyboard-pass flag (unused by touch; kept for the input merge). */
+  /** One-shot taps from the other circles and the keyboard. */
   passRequested: false,
+  flickRequested: false,
+  slideRequested: false,
 };
 
 export function resetVirtualInput() {
@@ -38,7 +41,7 @@ export function resetVirtualInput() {
   virtualInput.shootPower = 0;
   virtualInput.shootFired = false;
   virtualInput.firePower = 0;
-  virtualInput.fireAimX = 0;
-  virtualInput.fireAimY = 0;
   virtualInput.passRequested = false;
+  virtualInput.flickRequested = false;
+  virtualInput.slideRequested = false;
 }

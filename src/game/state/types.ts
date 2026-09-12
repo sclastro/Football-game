@@ -34,33 +34,48 @@ export function isPlayingPhase(phase: MatchPhase): boolean {
   return phase === "live" || phase === "extraTime";
 }
 
-export type Screen = "title" | "teamSelect" | "squadSelect" | "playing";
+export type Screen =
+  | "title"
+  /** Pick your nation. */
+  | "teamSelect"
+  /** Squad editor: starting eleven, formation, player cards. */
+  | "squad"
+  /** Scouting report on the side you have been drawn against. */
+  | "briefing"
+  | "playing";
+
 export type ControlMode = "keyboard" | "joystick";
 
+/** Which of the three things on the front page you are doing. */
+export type GameMode = "match" | "shootout" | "tutorial";
+
 export type Side = "home" | "away";
-
-/** Where a penalty is aimed, or which way the keeper dives. */
-export type PenaltyDirection = "left" | "centre" | "right";
-
-/** How high the taker struck it. Height decides how reachable a save is. */
-export type PenaltyHeight = "low" | "mid" | "high";
 
 /** What actually happened to a penalty. */
 export type PenaltyOutcome = "goal" | "saved" | "post" | "wide";
 
+/**
+ * One penalty, in goal-mouth metres.
+ *
+ * The old left/centre/right model is gone: both the taker and the keeper now
+ * choose a point, and whether the keeper's reach covers where the ball actually
+ * ended up is the entire resolution.
+ */
 export interface PenaltyKick {
-  /** Direction and height the taker went for. */
-  shotDir: PenaltyDirection;
-  shotHeight: PenaltyHeight;
-  /** Direction the keeper committed to. */
-  diveDir: PenaltyDirection;
-  /** 0..1 — how well the keeper timed it. Low means they went late or early. */
-  diveTiming: number;
+  /** Where the taker aimed. x is across the goal, y is height. */
+  aimX: number;
+  aimY: number;
+  /** Where the ball actually went — aim plus the taker's nerve. */
+  shotX: number;
+  shotY: number;
+  /** Centre of the keeper's reach. */
+  diveX: number;
+  diveY: number;
+  /** Radius of that reach in metres, set by difficulty. */
+  diveRadius: number;
+  /** How close the keeper came: 0 = covered it, 1 = nowhere near. */
+  missBy: number;
   outcome: PenaltyOutcome;
-  /** Sideways aim error in metres, so a wide shot misses by a believable amount. */
-  aimErrorX: number;
-  /** Vertical aim error in metres — positive is over the bar. */
-  aimErrorY: number;
 }
 
 export interface ShootoutState {
@@ -72,7 +87,7 @@ export interface ShootoutState {
   suddenDeath: boolean;
   /** 'choosing' waits for the user, 'resolving' animates, 'result' shows it. */
   stage: "choosing" | "resolving" | "result";
-  /** The kick being taken, once a direction has been chosen. */
+  /** The kick being taken, once a point has been chosen. */
   kick: PenaltyKick | null;
   /** Wall-clock seconds (perf clock) at which the current stage advances. */
   nextAt: number;
@@ -81,6 +96,8 @@ export interface ShootoutState {
 export interface MatchState {
   /** Which top-level screen is showing. */
   screen: Screen;
+  /** Which of the three front-page activities is running. */
+  mode: GameMode;
   /** Input scheme (joystick is the on-screen touch control). */
   controlMode: ControlMode;
   /** AI strength, chosen in the menu. */
@@ -89,6 +106,9 @@ export interface MatchState {
   matchDuration: number;
   homeTeamId: string;
   awayTeamId: string;
+  /** Shape each side lines up in, by formation id. */
+  homeFormationId: string;
+  awayFormationId: string;
   score: { home: number; away: number };
   /** Seconds remaining on the match clock. */
   clock: number;
@@ -100,10 +120,10 @@ export interface MatchState {
   lastScorer: Side | null;
   /** Incremented to signal every entity to teleport back to its kickoff spot. */
   resetNonce: number;
-  /** Starting eight for each side, index-aligned to FORMATION slots. */
+  /** Starting eleven for each side, index-aligned to the formation's slots. */
   homeSquad: string[];
   awaySquad: string[];
-  /** Squad members not in the starting eight (rendered on the bench). */
+  /** Squad members not in the starting eleven (rendered on the bench). */
   homeBench: string[];
   awayBench: string[];
   /** Perf-clock seconds at which the entrance sequence ends. */
@@ -112,4 +132,6 @@ export interface MatchState {
   extraTimeActive: boolean;
   /** Non-null only during the shootout phases. */
   shootout: ShootoutState | null;
+  /** Which tutorial lesson is showing, when the mode is 'tutorial'. */
+  tutorialStep: number;
 }

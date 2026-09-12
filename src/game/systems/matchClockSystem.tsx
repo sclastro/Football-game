@@ -1,11 +1,6 @@
 import { useFrame } from "@react-three/fiber";
 import { useGameStore } from "@/game/state/gameStore";
-import {
-  ballApi,
-  clearPass,
-  dribbleState,
-  type TeamSide,
-} from "./worldRegistry";
+import { ballApi, clearPass, dribbleState } from "./worldRegistry";
 import { FIELD_DIMENSIONS } from "@/game/entities/Field";
 import { GOAL_DIMENSIONS } from "@/game/entities/Goal";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
@@ -45,43 +40,33 @@ function reactToNearGoal(x: number, y: number, insideMouth: boolean): void {
   }
 }
 
-/** How far inside the line the ball is placed for a restart. */
-const RESTART_INSET = 1.5;
+/** How far inside the line a ball that escaped anyway is put back. */
+const RESCUE_INSET = 2;
 
 function clamp(v: number, lo: number, hi: number) {
   return Math.min(hi, Math.max(lo, v));
 }
 
 /**
- * Quick throw-in / goal kick. The ball is brought back just inside the line at
- * the point it left, and possession is awarded to the side that did NOT put it
- * out.
+ * Last-resort rescue for a ball that has somehow got outside the boards.
  *
- * Deliberately NOBODY is moved. Warping a player over to the ball looked wrong
- * — the whole point of "out is out" is that play resumes from where it actually
- * stopped, and the awarded side simply runs to it under normal AI.
+ * There is no out of play in this game — the boards run along every line and
+ * the ball rebounds — so this is not a throw-in, it is a safety net for a ball
+ * that clipped a seam or fell through the world. Nobody is moved and nobody is
+ * awarded anything; the ball is simply put back where it escaped.
  */
-function restartFromTouch(outX: number, outZ: number): void {
+function rescueBall(outX: number, outZ: number): void {
   const body = ballApi.body;
   if (!body) return;
 
-  const x = clamp(outX, -HALF_W + RESTART_INSET, HALF_W - RESTART_INSET);
-  const z = clamp(outZ, -LINE_Z + RESTART_INSET, LINE_Z - RESTART_INSET);
+  const x = clamp(outX, -HALF_W + RESCUE_INSET, HALF_W - RESCUE_INSET);
+  const z = clamp(outZ, -LINE_Z + RESCUE_INSET, LINE_Z - RESCUE_INSET);
 
   body.setTranslation({ x, y: BALL_R + 0.05, z }, true);
   body.setLinvel({ x: 0, y: 0, z: 0 }, true);
   body.setAngvel({ x: 0, y: 0, z: 0 }, true);
 
-  // Award possession to the other side. The head start comes from the head
-  // start they already have on the pitch, not from a teleport.
-  const awardTo: TeamSide =
-    dribbleState.lastTouchTeam === "home" ? "away" : "home";
-  dribbleState.lastTouchTeam = awardTo;
   dribbleState.possessorId = null;
-
-  // Any pass that was in flight is dead, and briefly hold off tackles so the
-  // restart isn't instantly swarmed.
-  dribbleState.protectedUntil = performance.now() / 1000 + 0.4;
   clearPass();
 }
 
@@ -90,9 +75,7 @@ function restartFromTouch(outX: number, outZ: number): void {
  * - ticks the countdown while the ball is in play (regulation or extra time);
  * - goal detection by ball position: only counts once the WHOLE ball has
  *   crossed the goal line between the posts, under the bar;
- * - real out-of-play: the moment the whole ball crosses a touchline or the
- *   goal line outside the goal, the ball returns to the centre spot and both
- *   teams reset to formation (a fresh kickoff);
+ * - a safety net for a ball that escapes the boards entirely;
  * - resumes play after the GOAL! stoppage;
  * - runs the entrance countdown and the shootout timeline.
  */
@@ -136,15 +119,13 @@ export function MatchClock() {
         return;
       }
 
-      // Out of play: whole ball across a touchline, or across a goal line
-      // outside the goal mouth. Restart as a quick throw-in — the ball comes
-      // back just inside the line and the nearest opponent of whoever put it
-      // out steps up to it. Nobody else moves, so play never actually stops.
-      const overTouchline = Math.abs(t.x) > HALF_W + BALL_R;
-      const overGoalLine = Math.abs(t.z) > LINE_Z + BALL_R && !withinGoalMouth;
-      if (overTouchline || overGoalLine || t.y < -2) {
-        restartFromTouch(t.x, t.z);
-        audio.whistle();
+      // The boards keep the ball in, so this only ever fires for a ball that
+      // has escaped the world (a seam, a fall through the floor). It is a
+      // rescue, not a restart: no whistle, no award, play simply carries on.
+      const escapedSide = Math.abs(t.x) > HALF_W + 2.5;
+      const escapedEnd = Math.abs(t.z) > LINE_Z + 8;
+      if (escapedSide || escapedEnd || t.y < -2) {
+        rescueBall(t.x, t.z);
       }
     } else if (state.phase === "goalStoppage") {
       if (performance.now() / 1000 >= state.goalFlashUntil) {

@@ -13,11 +13,13 @@ import {
   type PlayerRecord,
 } from './worldRegistry'
 import { FIELD_DIMENSIONS } from '@/game/entities/Field'
-import { ROLE_BANDS } from '@/game/data/formations'
+import { formationById, slotBand } from '@/game/data/formations'
+import { tunedIdentity, type TacticalIdentity } from '@/game/data/tactics'
 import { DIVE_POSE_TIME } from './kickAnimation'
 import { GOAL_DIMENSIONS } from '@/game/entities/Goal'
 import { DIFFICULTY, type DifficultyTuning } from '@/game/data/difficulty'
 import { useGameStore } from '@/game/state/gameStore'
+import { canSlide, isKnockedDown, startSlide } from './slideSystem'
 
 const HALF_W = FIELD_DIMENSIONS.width / 2
 const HALF_L = FIELD_DIMENSIONS.length / 2
@@ -65,6 +67,42 @@ function tag(rec: PlayerRecord, behaviour: Behaviour, input: InputState): InputS
 /** Current difficulty tuning; read once per call rather than per lookup. */
 function tuning(): DifficultyTuning {
   return DIFFICULTY[useGameStore.getState().difficulty]
+}
+
+/**
+ * Cache of each side's tactical identity, rebuilt whenever the fixture or the
+ * difficulty changes.
+ *
+ * This is the thing that makes nations play differently. Every behaviour below
+ * reads the same seven numbers, so Spain and Morocco run the same code and look
+ * nothing alike: one presses on the halfway line and recycles possession, the
+ * other sits on the edge of its own box and launches the wing-backs.
+ */
+const identityCache: {
+  key: string
+  home: TacticalIdentity | null
+  away: TacticalIdentity | null
+} = { key: '', home: null, away: null }
+
+function identityFor(rec: PlayerRecord): TacticalIdentity {
+  const st = useGameStore.getState()
+  const key = `${st.homeTeamId}|${st.awayTeamId}|${st.difficulty}`
+  if (identityCache.key !== key) {
+    identityCache.key = key
+    identityCache.home = tunedIdentity(st.homeTeamId, st.difficulty)
+    identityCache.away = tunedIdentity(st.awayTeamId, st.difficulty)
+  }
+  const id = rec.team === 'home' ? identityCache.home : identityCache.away
+  return id ?? tunedIdentity('ENG', st.difficulty)
+}
+
+/** The formation slot this player occupies, used for their roam band. */
+function slotFor(rec: PlayerRecord) {
+  const st = useGameStore.getState()
+  const formation = formationById(
+    rec.team === 'home' ? st.homeFormationId : st.awayFormationId,
+  )
+  return formation.slots[rec.slot] ?? formation.slots[0]
 }
 
 /** The Z of the goal this player is attacking. */
@@ -141,8 +179,12 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
   input.shootCharge = 0
   input.shootReleased = false
   input.passPressed = false
-  input.hasShootAim = false
+  input.flickPressed = false
+  input.slidePressed = false
   input.moveDirection.set(0, 0)
+
+  // Flat on the floor after a tackle: no input at all until they get up.
+  if (isKnockedDown(rec)) return tag(rec, 'idle', input)
 
   const ball = ballPosition(_ball)
   if (!ball) return input
@@ -150,6 +192,7 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
   const now = performance.now() / 1000
   const ai = rec.ai
   const tune = tuning()
+  const id = identityFor(rec)
 
   // Refresh the wandering offset every ~0.6-1.4s.
   if (now >= ai.nextJitterAt) {
@@ -178,29 +221,49 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
 
   // --- Carrying it myself ---------------------------------------------------
   if (possessor?.id === rec.id) {
-    return tag(rec, 'carry', carryBehaviour(rec, input))
+    return tag(rec, 'carry', carryBehaviour(rec, input, id))
   }
 
   // --- My team has it: make a run or hold shape -----------------------------
   if (possessor && possessor.team === rec.team) {
     // The user's selected team-mate always breaks into space.
     if (ai.makeRun || shouldSupport(rec, possessor)) {
-      return tag(rec, 'support', supportRunBehaviour(rec, possessor, input, now))
+      return tag(rec, 'support', supportRunBehaviour(rec, possessor, input, now, id))
     }
-    return tag(rec, 'shape', holdShapeBehaviour(rec, ball, input, 0.1, 0.4, 4))
+    // A high line pushes the whole shape up behind the ball.
+    return tag(
+      rec,
+      'shape',
+      holdShapeBehaviour(rec, ball, input, 0.1, 0.4, 2 + id.line * 5),
+    )
   }
 
   // --- They have it: press with one, cover the lane with the next -----------
   if (possessor && possessor.team !== rec.team) {
-    const presser = closestOfTeam(rec.team, ball)
-    if (presser?.id === rec.id) {
-      return tag(rec, 'press', pressBehaviour(rec, possessor, input, tune))
+    // Press height decides WHERE they are willing to engage, measured out from
+    // their OWN goal: a low block waits until the ball is inside its own half,
+    // a high press comes out to the opposition keeper. The pitch is 2·HALF_L
+    // end to end, so 1·HALF_L is the halfway line and 2 is everywhere.
+    const ownGoalZ = -attackGoalZ(rec)
+    const ballOut = Math.abs(possessor.position.z - ownGoalZ)
+    const engageDepth = HALF_L * (0.35 + id.pressHeight * 1.75)
+    const willEngage = ballOut < engageDepth
+
+    if (willEngage) {
+      const presser = closestOfTeam(rec.team, ball)
+      if (presser?.id === rec.id) {
+        return tag(rec, 'press', pressBehaviour(rec, possessor, input, tune, id))
+      }
+      const cover = closestOfTeam(rec.team, ball, presser?.id)
+      if (cover?.id === rec.id) {
+        return tag(rec, 'cover', coverLaneBehaviour(rec, possessor, input, tune))
+      }
     }
-    const cover = closestOfTeam(rec.team, ball, presser?.id)
-    if (cover?.id === rec.id) {
-      return tag(rec, 'cover', coverLaneBehaviour(rec, possessor, input, tune))
-    }
-    return tag(rec, 'shape', holdShapeBehaviour(rec, ball, input, 0.2, 0.45, -2))
+    return tag(
+      rec,
+      'shape',
+      holdShapeBehaviour(rec, ball, input, 0.2, 0.45, -8 + id.line * 10),
+    )
   }
 
   // --- Loose ball -----------------------------------------------------------
@@ -216,9 +279,23 @@ export function computeAiInput(rec: PlayerRecord, input: InputState): InputState
 // Behaviours
 // ---------------------------------------------------------------------------
 
-/** Dribble at the goal, drifting so runs curve instead of tracking a laser line. */
-function carryBehaviour(rec: PlayerRecord, input: InputState): InputState {
-  _target.set(rec.ai.jitterX * 1.5, 0, attackGoalZ(rec))
+/**
+ * Dribble at the goal, drifting so runs curve instead of tracking a laser line.
+ *
+ * A wide side aims for the channel outside the box before cutting in; a narrow
+ * one heads straight down the middle. Same code, visibly different attack.
+ */
+function carryBehaviour(
+  rec: PlayerRecord,
+  input: InputState,
+  id: TacticalIdentity,
+): InputState {
+  const goalZ = attackGoalZ(rec)
+  const depth = Math.abs(rec.position.z - goalZ)
+  // Aim wide while there is still pitch to run into, then converge on the goal.
+  const wideness = id.width * THREE.MathUtils.clamp((depth - 16) / 24, 0, 1)
+  const channel = Math.sign(rec.position.x || 1) * HALF_W * 0.72 * wideness
+  _target.set(channel + rec.ai.jitterX * 1.5, 0, goalZ)
   input.sprinting = true
   steerToward(rec, _target, input)
   return input
@@ -250,6 +327,7 @@ function supportRunBehaviour(
   carrier: PlayerRecord,
   input: InputState,
   now: number,
+  id: TacticalIdentity,
 ): InputState {
   const ai = rec.ai
   if (now >= ai.nextRunAt) {
@@ -257,8 +335,11 @@ function supportRunBehaviour(
     let bestScore = -Infinity
     for (let i = 0; i < 7; i++) {
       // Fan out across the width, ahead of the carrier by a varying amount.
-      const spreadX = (i / 6 - 0.5) * 2 * (HALF_W * 0.8)
-      const ahead = 6 + (i % 3) * 6
+      // A wide side samples right out to the touchline; a narrow one keeps its
+      // options inside the width of the box.
+      const spreadX = (i / 6 - 0.5) * 2 * (HALF_W * (0.35 + id.width * 0.6))
+      // A direct side runs beyond the ball; a patient one offers short.
+      const ahead = (4 + (i % 3) * 5) * (0.7 + id.directness * 1.1)
       const x = THREE.MathUtils.clamp(
         carrier.position.x * 0.35 + spreadX,
         -HALF_W + 2,
@@ -294,18 +375,39 @@ function supportRunBehaviour(
   return input
 }
 
+/** How close the carrier must be, and how square, before a slide is worth it. */
+const SLIDE_RANGE = 2.1
+/** Chance per frame that an aggressive side commits to the challenge. */
+const SLIDE_URGE = 0.09
+
 /** Close down the carrier on an intercept course rather than chasing their back. */
 function pressBehaviour(
   rec: PlayerRecord,
   carrier: PlayerRecord,
   input: InputState,
   tune: DifficultyTuning,
+  id: TacticalIdentity,
 ): InputState {
   const dist = rec.position.distanceTo(carrier.position)
-  if (dist > tune.pressRadius) {
+  // Aggressive sides step out further to engage than passive ones do.
+  const reach = tune.pressRadius * (0.7 + id.aggression * 0.7)
+  if (dist > reach) {
     // Too far to press — drop into shape instead of chasing pointlessly.
     return holdShapeBehaviour(rec, carrier.position, input, 0.2, 0.45, -2)
   }
+
+  // Go to ground when the ball is genuinely within reach. Aggression is the
+  // whole difference between Argentina and Spain defending the same situation:
+  // one commits, the other shepherds. There are no cards, so the only cost of a
+  // mistimed slide is being on the floor while the carrier runs past.
+  if (
+    dist < SLIDE_RANGE &&
+    Math.random() < SLIDE_URGE * id.aggression &&
+    canSlide(rec)
+  ) {
+    startSlide(rec)
+  }
+
   // Aim slightly goal-side of the carrier so we cut off the run, not trail it.
   const goalSide = attackDir(rec) * -1
   _target.set(
@@ -608,12 +710,16 @@ function chooseBestPassTarget(
   requireClearLane = true,
 ): PlayerRecord | null {
   const dir = attackDir(rec)
+  const id = identityFor(rec)
   let best: PlayerRecord | null = null
   let bestScore = -Infinity
+  // A direct side will look for a forty-metre ball; a patient one will not
+  // consider anything past the next line of players.
+  const maxPass = 16 + id.directness * 26
   for (const other of playerRegistry.values()) {
     if (other.team !== rec.team || other.id === rec.id || other.isGoalkeeper) continue
     const dist = rec.position.distanceTo(other.position)
-    if (dist < 3 || dist > 28) continue
+    if (dist < 3 || dist > maxPass) continue
     if (requireClearLane && !laneIsClear(rec, other)) continue
     const progress = (rec.position.z - other.position.z) * dir
     const open = Math.min(
@@ -622,8 +728,13 @@ function chooseBestPassTarget(
     )
     // The user asking for the ball outweighs almost everything else.
     const called = callState.byId === other.id && performance.now() / 1000 < callState.untilTime
+    // Directness decides what "best" means: forward progress, or safety.
     const score =
-      progress * 1.1 + open * 1.4 - dist * 0.25 + (called ? 25 : 0)
+      progress * (0.5 + id.directness * 1.6) +
+      open * (2.1 - id.directness * 1.1) +
+      Math.abs(other.position.x) * (id.width - 0.5) * 0.3 -
+      dist * 0.25 +
+      (called ? 25 : 0)
     if (score > bestScore) {
       bestScore = score
       best = other
@@ -665,6 +776,7 @@ export function computeAiKick(
   }
 
   const tune = tuning()
+  const id = identityFor(rec)
   const goalZ = attackGoalZ(rec)
 
   if (possessor?.id === rec.id) {
@@ -682,7 +794,11 @@ export function computeAiKick(
     const dz = Math.abs(rec.position.z - goalZ)
     const distToGoal = Math.hypot(rec.position.x, dz)
     const angle = Math.atan2(Math.abs(rec.position.x), Math.max(0.1, dz))
-    if (distToGoal < AI_SHOOT_RANGE && angle < AI_SHOOT_ANGLE) {
+    // Risk stretches both the range and the angle a side will shoot from.
+    // Portugal will have a go from twenty-five yards; Spain will pass again.
+    const range = AI_SHOOT_RANGE * (0.62 + id.risk * 0.85)
+    const widest = AI_SHOOT_ANGLE * (0.7 + id.risk * 0.6)
+    if (distToGoal < range && angle < widest) {
       // Aim inside a post rather than at the corner flag.
       const side = Math.random() < 0.5 ? -1 : 1
       _goalTarget.set(side * HALF_GOAL_W * 0.55, 0, goalZ)
@@ -698,9 +814,12 @@ export function computeAiKick(
     const held = now - dribbleState.possessorSince
     const called = callState.byId !== null && now < callState.untilTime
     const pressured = underPressure(rec)
-    const settled = held >= MIN_CARRY_TIME
+    // Tempo is how long the ball sticks: Japan move it on in half the time
+    // Croatia take, from the same situation.
+    const settled = held >= MIN_CARRY_TIME * (1.6 - id.tempo * 1.1)
+    const release = tune.passTendency * (0.6 + id.tempo * 0.9)
 
-    if (called || pressured || (settled && Math.random() < tune.passTendency)) {
+    if (called || pressured || (settled && Math.random() < release)) {
       const receiver = chooseBestPassTarget(rec)
       // An AI team-mate's pass must never yank control away from the player
       // the user is driving, so these are always registered as not-by-user.
@@ -741,26 +860,27 @@ export function aiSpeedFactorNow(): number {
 // ---------------------------------------------------------------------------
 
 /**
- * Clamp a target to the band this player's role is allowed to occupy.
+ * Clamp a target to the band this player's SLOT is allowed to occupy.
  *
- * Bands are authored for a team defending -Z (see ROLE_BANDS), so the away side
- * — which defends +Z — reads them mirrored. A player already outside their band
- * is pulled back toward it rather than frozen, so recovery looks like running
- * back into position instead of a snap.
+ * Bands are anchored to the slot rather than the role, so a 5-3-2's wing-back
+ * and a 3-5-2's wing-back roam differently despite both being midfielders. They
+ * are authored for a team defending -Z, so the away side — which defends +Z —
+ * reads them mirrored.
+ *
+ * The whole band then slides up or down the pitch with the side's tactical
+ * line height: Germany's defenders are allowed thirty metres further forward
+ * than Morocco's, from exactly the same 4-3-3.
  */
 function clampToRoleBand(rec: PlayerRecord, targetZ: number): number {
   if (rec.isGoalkeeper) return targetZ
-  const band = ROLE_BANDS[rec.role]
   const attacking = teamPhase[rec.team] === 'attack'
-  const lo = attacking ? band.attackMin : band.defendMin
-  const hi = attacking ? band.attackMax : band.defendMax
+  const [lo, hi] = slotBand(slotFor(rec), attacking)
+  // line 0.5 is neutral; ±0.5 shifts the whole band by up to a sixth of a half.
+  const shift = (identityFor(rec).line - 0.5) * 0.32
 
-  // Band space runs -1 (own goal line) → +1 (opponent's). Home attacks -Z so
-  // dir = -1 and band f maps to world -f·HALF_L; away attacks +Z so dir = +1
-  // and f maps to +f·HALF_L. Both are `f · dir · HALF_L`.
   const dir = attackDir(rec) // -1 for home, +1 for away
-  const a = lo * dir * HALF_L
-  const b = hi * dir * HALF_L
+  const a = (lo + shift) * dir * HALF_L
+  const b = (hi + shift) * dir * HALF_L
   return THREE.MathUtils.clamp(targetZ, Math.min(a, b), Math.max(a, b))
 }
 

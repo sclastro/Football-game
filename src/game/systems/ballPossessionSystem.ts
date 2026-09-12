@@ -139,13 +139,11 @@ export function tryShoot(
 
   const power = THREE.MathUtils.clamp(input.shootCharge / maxChargeTime, 0, 1);
 
-  // The touch stick can aim independently of where the player is facing, so you
-  // can strike to the right while sprinting left.
-  if (input.hasShootAim && (input.shootAimX !== 0 || input.shootAimZ !== 0)) {
-    _dir.set(input.shootAimX, 0, input.shootAimZ).normalize();
-  } else {
-    facingVector(yaw, _dir);
-  }
+  // Direction ALWAYS comes from the way the player is facing. The drag on the
+  // shoot circle sets power and nothing else, so pulling right while running
+  // left still strikes the ball to the left — which is what you were watching
+  // your player do, and therefore what you expect.
+  facingVector(yaw, _dir);
 
   // Long-range efforts lose power and drift. Distance is measured to the goal
   // being attacked, not to wherever the stick happens to point.
@@ -170,6 +168,44 @@ export function tryShoot(
   markKick(selfId);
   markTouch(selfId);
   releaseBall();
+  return true;
+}
+
+/** How far a flick carries forward, and how high it goes over. */
+const FLICK_FORWARD = 6.5;
+const FLICK_LIFT = 5.2;
+/** Seconds after a flick during which the ball cannot be tackled away. */
+const FLICK_PROTECT = 1.1;
+
+/**
+ * Rainbow flick: scoop the ball up over your own head and land it in front of
+ * you, past whoever was standing there.
+ *
+ * This is the one deliberately airborne kick in the game. It exists because a
+ * defender who is simply standing in the lane has no answer to it — but it is
+ * slow, and anybody arriving at pace from the side will beat it, which is what
+ * stops it becoming the only move worth using.
+ */
+export function tryFlick(
+  ball: RapierRigidBody,
+  selfId: string,
+  playerPos: THREE.Vector3,
+  yaw: number,
+): boolean {
+  if (!kickReady(selfId)) return false;
+  if (horizontalDistanceToBall(playerPos, ball) > kickRange) return false;
+
+  facingVector(yaw, _dir);
+  const forward = powerForDistance(FLICK_FORWARD);
+  _impulse.copy(_dir).multiplyScalar(forward);
+  _impulse.y = FLICK_LIFT * mass;
+  ball.applyImpulse(_impulse, true);
+
+  markKick(selfId);
+  markTouch(selfId);
+  releaseBall();
+  // The flicker keeps the ball: the whole point is that it stays yours.
+  dribbleState.protectedUntil = performance.now() / 1000 + FLICK_PROTECT;
   return true;
 }
 

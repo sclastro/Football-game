@@ -17,9 +17,14 @@ export function Scoreboard() {
   const score = useGameStore((s) => s.score);
   const clock = useGameStore((s) => s.clock);
   const phase = useGameStore((s) => s.phase);
+  const mode = useGameStore((s) => s.mode);
 
   const home = TEAMS[homeTeamId];
   const away = TEAMS[awayTeamId];
+
+  // The training ground has no clock and no fixture, and its caption card sits
+  // where the scoreboard would be.
+  if (mode === "tutorial") return null;
 
   return (
     <div className="pointer-events-none absolute left-1/2 top-3 -translate-x-1/2 select-none font-sans">

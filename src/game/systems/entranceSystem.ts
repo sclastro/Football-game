@@ -55,7 +55,8 @@ export function computeEntranceInput(
   input.shootCharge = 0
   input.shootReleased = false
   input.passPressed = false
-  input.hasShootAim = false
+  input.flickPressed = false
+  input.slidePressed = false
   input.moveDirection.set(0, 0)
 
   if (elapsed < ENTRANCE_LINEUP_END) {

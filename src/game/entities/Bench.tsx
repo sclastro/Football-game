@@ -4,6 +4,8 @@ import { FIELD_DIMENSIONS } from "./Field";
 const DUGOUT_X = FIELD_DIMENSIONS.width / 2 + 1.6;
 const DUGOUT_Z = FIELD_DIMENSIONS.length * 0.14;
 const SEAT_SPACING = 1.1;
+/** How many substitutes the dugout can actually seat. */
+const MAX_SEATS = 9;
 
 /** A seated substitute: blocky mini-figure on the bench. */
 function SeatedPlayer({
@@ -109,10 +111,16 @@ function Dugout({ centerZ, shirtColor, benchIds }: DugoutProps) {
       </mesh>
 
       {/* Seated substitutes */}
-      {benchIds.map((id, i) => (
+      {/* The pool is deep enough now (squad plus legends) to overflow the
+          dugout, so only the first few actually get a seat. */}
+      {benchIds.slice(0, MAX_SEATS).map((id, i) => (
         <SeatedPlayer
           key={id}
-          position={[0.15, 0.05, (i - (benchIds.length - 1) / 2) * SEAT_SPACING]}
+          position={[
+            0.15,
+            0.05,
+            (i - (Math.min(benchIds.length, MAX_SEATS) - 1) / 2) * SEAT_SPACING,
+          ]}
           shirtColor={shirtColor}
         />
       ))}

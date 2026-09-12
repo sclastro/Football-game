@@ -1,6 +1,6 @@
 import * as THREE from 'three'
 
-export type KickKind = 'shot' | 'pass' | 'trap'
+export type KickKind = 'shot' | 'pass' | 'trap' | 'flick'
 
 /** Seconds a keeper's dive pose plays over. */
 export const DIVE_POSE_TIME = 0.55
@@ -10,6 +10,7 @@ export const KICK_DURATIONS: Record<KickKind, number> = {
   shot: 0.44,
   pass: 0.26,
   trap: 0.3,
+  flick: 0.5,
 }
 
 /** The joints a kick animation drives. */
@@ -41,7 +42,110 @@ export function applyKickPose(kind: KickKind, t: number, refs: KickRefs): void {
     case 'trap':
       trapPose(t, refs)
       break
+    case 'flick':
+      flickPose(t, refs)
+      break
   }
+}
+
+/**
+ * Rainbow flick: roll the ball up the back of the standing leg with the heel,
+ * then snap both legs through to throw it over your own head.
+ *
+ *   0.00–0.45  the trailing heel scoops, body folds forward over the ball
+ *   0.45–1.00  both legs whip back and the torso arches to launch it
+ */
+function flickPose(t: number, refs: KickRefs): void {
+  const { lean, leftLeg, rightLeg, leftShin, rightShin, leftArm, rightArm } = refs
+
+  if (t < 0.45) {
+    const k = t / 0.45
+    // Heel drags up behind: knee folds hard while the hip barely moves.
+    rightLeg?.rotation.set(0.25 * k, 0, 0)
+    if (rightShin) rightShin.rotation.x = 2.1 * k
+    leftLeg?.rotation.set(0.1 * k, 0, 0)
+    if (leftShin) leftShin.rotation.x = 0.2 * k
+    if (lean) {
+      lean.rotation.x = 0.45 * k
+      lean.rotation.y = 0
+    }
+    leftArm?.rotation.set(-0.5 * k, 0, 0.5 * k)
+    rightArm?.rotation.set(-0.5 * k, 0, -0.5 * k)
+    return
+  }
+
+  // Launch: everything snaps backwards and the chest opens to the sky.
+  const k = (t - 0.45) / 0.55
+  const snap = Math.sin(k * Math.PI)
+  rightLeg?.rotation.set(0.25 + 1.5 * snap, 0, 0)
+  if (rightShin) rightShin.rotation.x = 2.1 * (1 - k)
+  leftLeg?.rotation.set(0.1 + 1.1 * snap, 0, 0)
+  if (leftShin) leftShin.rotation.x = 0.2 + 0.6 * snap
+  if (lean) {
+    lean.rotation.x = 0.45 - 0.95 * snap
+    lean.rotation.y = 0
+  }
+  leftArm?.rotation.set(-1.5 * snap, 0, 0.8 * snap)
+  rightArm?.rotation.set(-1.5 * snap, 0, -0.8 * snap)
+}
+
+/**
+ * Slide tackle. `t` runs 0 → 1 across the slide; the return value is the body's
+ * vertical drop, since a player going to ground genuinely gets lower.
+ *
+ * The lead leg extends straight out at the ball while the trailing leg tucks
+ * under — that shape is what reads as a slide rather than a fall.
+ */
+export function applySlidePose(t: number, refs: KickRefs): number {
+  const { lean, leftLeg, rightLeg, leftShin, rightShin, leftArm, rightArm } = refs
+
+  // Down fast, hold, then start to come back up at the very end.
+  const down = t < 0.18 ? t / 0.18 : t > 0.78 ? (1 - t) / 0.22 : 1
+
+  if (lean) {
+    // Rotate backwards onto the hip and roll slightly onto one side.
+    lean.rotation.x = 1.15 * down
+    lean.rotation.z = 0.35 * down
+    lean.rotation.y = 0
+  }
+  // Lead leg straight out at the ball.
+  rightLeg?.rotation.set(-1.35 * down, 0, -0.2 * down)
+  if (rightShin) rightShin.rotation.x = 0
+  // Trailing leg tucked underneath.
+  leftLeg?.rotation.set(-0.35 * down, 0, 0.25 * down)
+  if (leftShin) leftShin.rotation.x = 1.5 * down
+
+  leftArm?.rotation.set(-0.6 * down, 0, 0.9 * down)
+  rightArm?.rotation.set(0.4 * down, 0, -0.7 * down)
+
+  return -0.5 * down
+}
+
+/**
+ * Knocked down. `t` runs 0 → 1 from the moment of contact to standing again:
+ * they go over, lie there, and push themselves back up on their own.
+ */
+export function applyKnockdownPose(t: number, refs: KickRefs): number {
+  const { lean, leftLeg, rightLeg, leftShin, rightShin, leftArm, rightArm } = refs
+
+  // Go down quickly, lie still, then get up over the last third.
+  const down = t < 0.16 ? t / 0.16 : t > 0.68 ? Math.max(0, (1 - t) / 0.32) : 1
+
+  if (lean) {
+    lean.rotation.x = 1.45 * down
+    lean.rotation.z = 0.5 * down
+    lean.rotation.y = 0
+  }
+  leftLeg?.rotation.set(-0.5 * down, 0, 0.3 * down)
+  rightLeg?.rotation.set(-0.2 * down, 0, -0.25 * down)
+  if (leftShin) leftShin.rotation.x = 0.9 * down
+  if (rightShin) rightShin.rotation.x = 0.5 * down
+  // Arms out to break the fall, then pushing up off the turf.
+  const push = t > 0.68 ? 1 - down : 0
+  leftArm?.rotation.set(-1.1 * down + 0.8 * push, 0, 1.0 * down)
+  rightArm?.rotation.set(-0.9 * down + 0.8 * push, 0, -1.0 * down)
+
+  return -0.62 * down
 }
 
 /**

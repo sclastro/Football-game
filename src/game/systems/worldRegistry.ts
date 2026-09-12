@@ -45,11 +45,34 @@ export type Behaviour =
   | 'keeper'
   | 'walkout'
 
+/**
+ * Slide-tackle bookkeeping. Slides chain: you get three in a row, and the
+ * fourth is refused until the chain has had time to lapse.
+ */
+export interface SlideState {
+  /** Perf-clock seconds until which the slide pose and hitbox are live. */
+  activeUntil: number
+  /** Perf-clock seconds before which a new slide is refused. */
+  readyAt: number
+  /** How many slides have been made back to back. */
+  chain: number
+  /** When the last slide started, used to lapse the chain. */
+  lastAt: number
+  /** Opponents already hit by the current slide, so one slide hits once. */
+  hit: Set<string>
+}
+
+export function makeSlideState(): SlideState {
+  return { activeUntil: 0, readyAt: 0, chain: 0, lastAt: 0, hit: new Set() }
+}
+
 export interface PlayerRecord {
   id: string
   team: TeamSide
   /** Formation role, which decides how far up and back this player may roam. */
   role: PlayerPosition
+  /** Index into the formation's slot list, used for the roam band. */
+  slot: number
   isGoalkeeper: boolean
   /** Live world position, updated every frame by the entity. */
   position: THREE.Vector3
@@ -60,6 +83,9 @@ export interface PlayerRecord {
   slotIndex: number
   rigidBody: RapierRigidBody | null
   ai: AiState
+  slide: SlideState
+  /** Perf-clock seconds until which this player is on the floor and cannot move. */
+  knockedUntil: number
 }
 
 /**

@@ -1,18 +1,10 @@
 import { useState } from "react";
-import { useGameStore, DURATION_OPTIONS } from "@/game/state/gameStore";
+import { useGameStore } from "@/game/state/gameStore";
 import { TEAMS, TEAM_IDS } from "@/game/data/teams";
-import {
-  teamRating,
-  starPlayers,
-  teamStyle,
-} from "@/game/data/teamStrength";
-import {
-  DIFFICULTY_IDS,
-  DIFFICULTY_LABELS,
-  type Difficulty,
-} from "@/game/data/difficulty";
-import type { ControlMode } from "@/game/state/types";
-import { Screen, SectionTitle, Headline, Pill, BackButton } from "./Screen";
+import { teamRating, starPlayers } from "@/game/data/teamStrength";
+import { identityOf } from "@/game/data/tactics";
+import { DIFFICULTY_LABELS } from "@/game/data/difficulty";
+import { Screen, SectionTitle, Headline, BackButton } from "./Screen";
 import { Flag } from "./Flag";
 import { StarIcon } from "./Icons";
 
@@ -27,12 +19,7 @@ export function TeamSelect() {
   const setScreen = useGameStore((s) => s.setScreen);
   const chooseTeam = useGameStore((s) => s.chooseTeam);
   const homeTeamId = useGameStore((s) => s.homeTeamId);
-  const duration = useGameStore((s) => s.matchDuration);
-  const setMatchDuration = useGameStore((s) => s.setMatchDuration);
   const difficulty = useGameStore((s) => s.difficulty);
-  const setDifficulty = useGameStore((s) => s.setDifficulty);
-  const controlMode = useGameStore((s) => s.controlMode);
-  const setControlMode = useGameStore((s) => s.setControlMode);
 
   // Highlighting on hover/focus tints the whole screen, so you can feel the
   // nation before you commit to it.
@@ -84,8 +71,8 @@ export function TeamSelect() {
                   <span className="block truncate text-sm font-black leading-tight">
                     {t.name}
                   </span>
-                  <span className="block text-[10px] uppercase tracking-wider text-white/45">
-                    {teamStyle(id)}
+                  <span className="block truncate text-[10px] uppercase tracking-wider text-white/45">
+                    {identityOf(id).label}
                   </span>
                 </span>
                 <span className="flex items-center gap-1 rounded-md bg-black/40 px-1.5 py-1 text-xs font-black tabular-nums">
@@ -102,58 +89,22 @@ export function TeamSelect() {
         })}
       </div>
 
-      <div className="pp-rise mt-7">
-        <SectionTitle>Match length</SectionTitle>
-        <div className="flex justify-center gap-2">
-          {DURATION_OPTIONS.map((d) => (
-            <Pill
-              key={d}
-              active={duration === d}
-              onClick={() => setMatchDuration(d)}
-            >
-              {Math.round(d / 60)} min
-            </Pill>
-          ))}
-        </div>
-      </div>
-
-      <div className="pp-rise mt-6">
-        <SectionTitle>Difficulty</SectionTitle>
-        <div className="flex justify-center gap-2">
-          {DIFFICULTY_IDS.map((d: Difficulty) => (
-            <Pill
-              key={d}
-              active={difficulty === d}
-              onClick={() => setDifficulty(d)}
-            >
-              {DIFFICULTY_LABELS[d]}
-            </Pill>
-          ))}
-        </div>
-      </div>
-
-      <div className="pp-rise mt-6">
-        <SectionTitle>Controls</SectionTitle>
-        <div className="flex justify-center gap-2">
-          {(["joystick", "keyboard"] as ControlMode[]).map((m) => (
-            <Pill
-              key={m}
-              active={controlMode === m}
-              onClick={() => setControlMode(m)}
-            >
-              {m === "keyboard" ? "Keyboard" : "Touch"}
-            </Pill>
-          ))}
-        </div>
-        <p className="mx-auto mt-3 max-w-lg text-center text-[11px] leading-relaxed text-emerald-200/55">
-          {controlMode === "keyboard"
-            ? "WASD move · Shift sprint · click a team-mate to select, again to take over · click yourself to call for the ball · E pass · hold Space to shoot"
-            : "Left stick moves · tap a team-mate to select (tap again to take over) · tap yourself to call for the ball · PASS sends it · drag SHOOT to aim and fire"}
+      <div className="pp-rise mt-7 rounded-2xl bg-black/25 p-4 text-center ring-1 ring-white/10">
+        <SectionTitle>Difficulty · {DIFFICULTY_LABELS[difficulty]}</SectionTitle>
+        <p className="text-[11px] leading-relaxed text-emerald-200/60">
+          {difficulty === "easy"
+            ? "You will be drawn against the weaker half of the field, and they will sit in and let you play."
+            : difficulty === "hard"
+              ? "You will be drawn against the strongest half of the field, and they will come at you from the first whistle."
+              : "Anyone can come out of the draw, and they will play their normal game."}
+        </p>
+        <p className="mt-2 text-[11px] text-white/35">
+          Change it, the match length or the controls on the front page.
         </p>
       </div>
 
-      <p className="mt-8 text-center text-sm text-white/40">
-        Tap a nation to continue
+      <p className="mt-6 text-center text-sm text-white/40">
+        Tap a nation to pick your squad
       </p>
     </Screen>
   );

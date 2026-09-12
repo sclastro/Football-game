@@ -7,7 +7,10 @@ import {
   predictPath,
   PREVIEW_SAMPLES,
 } from "@/game/systems/aimPreview";
-import { shotFalloff } from "@/game/systems/ballPossessionSystem";
+import {
+  shotFalloff,
+  travelDistance,
+} from "@/game/systems/ballPossessionSystem";
 import { PHYSICS_CONFIG } from "@/game/physics/physicsConfig";
 import { useGameStore } from "@/game/state/gameStore";
 import { isPlayingPhase } from "@/game/state/types";
@@ -16,8 +19,10 @@ const { minShotImpulse, maxShotImpulse } = PHYSICS_CONFIG.ball;
 
 /** How many trail dots trace the predicted flight. */
 const DOTS = 16;
-/** Longest the ground aim bar gets, in metres, at full power. */
-const MAX_BAR = 14;
+/** Length of the arrowhead, in metres. */
+const ARROW_HEAD = 2.2;
+/** The arrow never draws longer than this, however far the ball would go. */
+const MAX_BAR_CLAMP = 34;
 
 const COLD = new THREE.Color("#ffffff");
 const WARM = new THREE.Color("#fde047");
@@ -37,6 +42,7 @@ export function AimIndicator() {
   const groupRef = useRef<THREE.Group>(null);
   const barGroupRef = useRef<THREE.Group>(null);
   const barRef = useRef<THREE.Mesh>(null);
+  const headRef = useRef<THREE.Mesh>(null);
   const dotsRef = useRef<THREE.InstancedMesh>(null);
   const landingRef = useRef<THREE.Mesh>(null);
 
@@ -70,27 +76,37 @@ export function AimIndicator() {
     if (p < 0.5) tint.copy(COLD).lerp(WARM, p * 2);
     else tint.copy(WARM).lerp(HOT, (p - 0.5) * 2);
 
-    // --- Ground aim bar -----------------------------------------------------
-    const barGroup = barGroupRef.current;
-    const bar = barRef.current;
-    if (barGroup && bar) {
-      barGroup.position.set(aimState.originX, 0, aimState.originZ);
-      // A plane laid flat has its length along local -Z after the X rotation,
-      // so yaw the parent to point that axis down the aim direction.
-      barGroup.rotation.y = Math.atan2(-aimState.dirX, -aimState.dirZ);
-      const len = 2 + p * MAX_BAR;
-      bar.scale.y = len;
-      bar.position.z = -len / 2;
-      (bar.material as THREE.MeshBasicMaterial).color.copy(tint);
-      (bar.material as THREE.MeshBasicMaterial).opacity = 0.35 + p * 0.4;
-    }
-
-    // --- Predicted roll -----------------------------------------------------
     // Apply the same distance falloff the real shot will, so the preview never
     // promises range the strike won't deliver.
     const { powerScale } = shotFalloff(aimState.distanceToGoal);
     const drive =
       THREE.MathUtils.lerp(minShotImpulse, maxShotImpulse, p) * powerScale;
+
+    // --- Ground arrow -------------------------------------------------------
+    // The arrow's length is literally how far the ball will roll, so the drag
+    // on the shoot circle reads as a distance rather than an abstract "power".
+    const travel = Math.min(MAX_BAR_CLAMP, travelDistance(drive));
+    const barGroup = barGroupRef.current;
+    const bar = barRef.current;
+    const head = headRef.current;
+    if (barGroup && bar) {
+      barGroup.position.set(aimState.originX, 0, aimState.originZ);
+      // A plane laid flat has its length along local -Z after the X rotation,
+      // so yaw the parent to point that axis down the aim direction.
+      barGroup.rotation.y = Math.atan2(-aimState.dirX, -aimState.dirZ);
+      const shaft = Math.max(0.6, travel - ARROW_HEAD);
+      bar.scale.y = shaft;
+      bar.position.z = -shaft / 2;
+      (bar.material as THREE.MeshBasicMaterial).color.copy(tint);
+      (bar.material as THREE.MeshBasicMaterial).opacity = 0.35 + p * 0.4;
+      if (head) {
+        head.position.z = -shaft - ARROW_HEAD / 2;
+        (head.material as THREE.MeshBasicMaterial).color.copy(tint);
+        (head.material as THREE.MeshBasicMaterial).opacity = 0.5 + p * 0.45;
+      }
+    }
+
+    // --- Predicted roll -----------------------------------------------------
     impulse.set(aimState.dirX * drive, 0, aimState.dirZ * drive);
     const count = predictPath(
       aimState.originX,
@@ -131,6 +147,16 @@ export function AimIndicator() {
         <mesh ref={barRef} position={[0, 0.04, 0]} rotation={[-Math.PI / 2, 0, 0]}>
           <planeGeometry args={[0.5, 1]} />
           <meshBasicMaterial transparent opacity={0.5} depthWrite={false} />
+        </mesh>
+        {/* Arrowhead. A cone with its tip along -Z once laid flat, so it points
+            the same way as the shaft. */}
+        <mesh
+          ref={headRef}
+          position={[0, 0.04, 0]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <coneGeometry args={[0.75, ARROW_HEAD, 3]} />
+          <meshBasicMaterial transparent opacity={0.7} depthWrite={false} />
         </mesh>
       </group>
 
